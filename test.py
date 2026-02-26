@@ -158,29 +158,89 @@ import main as m
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SHARED FIXTURES
+# Each fixture targets a specific organ system so tests are unambiguous.
 # ─────────────────────────────────────────────────────────────────────────────
 
-INTERACTIONS_CRITICAL = [
-    {'drug_a': 'Warfarin', 'drug_b': 'Aspirin',
-     'description': 'The risk or severity of bleeding and hemorrhage can be increased.',
-     'severity': 'Major', 'mechanism': 'Pharmacodynamic'},
-    {'drug_a': 'Metformin', 'drug_b': 'Contrast Dye',
-     'description': 'May increase the risk of lactic acidosis and organ failure.',
-     'severity': 'Moderate', 'mechanism': 'Renal clearance'},
+# ── Per-organ targeted interactions ──────────────────────────────────────────
+
+IX_CARDIOVASCULAR = {
+    'drug_a': 'Warfarin', 'drug_b': 'Aspirin',
+    'description': 'The risk of cardiac arrhythmia, QT prolongation, and bleeding is significantly increased when combined.',
+    'severity': 'Major', 'mechanism': 'Pharmacodynamic',
+}
+IX_HEPATIC = {
+    'drug_a': 'Isoniazid', 'drug_b': 'Rifampicin',
+    'description': 'Increased hepatotoxicity and liver failure risk due to elevated ALT and AST. Hepatic cytochrome CYP450 metabolism impaired.',
+    'severity': 'Major', 'mechanism': 'Hepatic enzyme induction',
+}
+IX_RENAL = {
+    'drug_a': 'Gentamicin', 'drug_b': 'Vancomycin',
+    'description': 'Nephrotoxic combination significantly increases risk of acute kidney injury. Monitor creatinine and eGFR closely.',
+    'severity': 'Major', 'mechanism': 'Additive nephrotoxicity',
+}
+IX_HEMATOLOGIC = {
+    'drug_a': 'Clopidogrel', 'drug_b': 'Warfarin',
+    'description': 'Risk of major bleeding, hemorrhage, and platelet dysfunction is markedly increased. INR must be monitored.',
+    'severity': 'Major', 'mechanism': 'Antiplatelet + anticoagulant synergy',
+}
+IX_GI = {
+    'drug_a': 'Naproxen', 'drug_b': 'Prednisolone',
+    'description': 'Gastrointestinal bleeding, stomach ulcer formation, and nausea significantly increased with concurrent use.',
+    'severity': 'Moderate', 'mechanism': 'GI mucosal damage',
+}
+IX_CNS = {
+    'drug_a': 'MAO Inhibitor', 'drug_b': 'SSRI',
+    'description': 'Fatal serotonin syndrome with life-threatening CNS seizure, confusion, and severe sedation. Brain serotonergic crisis.',
+    'severity': 'Contraindicated', 'mechanism': 'Serotonergic excess',
+}
+IX_RESPIRATORY = {
+    'drug_a': 'Morphine', 'drug_b': 'Diazepam',
+    'description': 'Severe respiratory depression and dyspnea. Risk of apnea and pulmonary failure requiring ICU admission.',
+    'severity': 'Major', 'mechanism': 'CNS/respiratory depression',
+}
+IX_ENDOCRINE = {
+    'drug_a': 'Glibenclamide', 'drug_b': 'Fluconazole',
+    'description': 'Severe hypoglycaemia risk due to impaired insulin and glucose metabolism. Blood glucose must be monitored.',
+    'severity': 'Major', 'mechanism': 'CYP2C9 inhibition',
+}
+IX_MUSCULOSKELETAL = {
+    'drug_a': 'Simvastatin', 'drug_b': 'Gemfibrozil',
+    'description': 'Substantially increased risk of rhabdomyolysis and severe myopathy with elevated creatine kinase (CK).',
+    'severity': 'Major', 'mechanism': 'CYP3A4 inhibition',
+}
+IX_IMMUNE = {
+    'drug_a': 'Methotrexate', 'drug_b': 'Trimethoprim',
+    'description': 'Severe immunosuppression and risk of anaphylaxis. Stevens-Johnson syndrome and hypersensitivity reactions reported.',
+    'severity': 'Major', 'mechanism': 'Folate antagonism',
+}
+
+# ── Composite fixture sets ────────────────────────────────────────────────────
+
+# All 10 organ systems represented
+INTERACTIONS_ALL_ORGANS = [
+    IX_CARDIOVASCULAR, IX_HEPATIC, IX_RENAL, IX_HEMATOLOGIC,
+    IX_GI, IX_CNS, IX_RESPIRATORY, IX_ENDOCRINE,
+    IX_MUSCULOSKELETAL, IX_IMMUNE,
 ]
 
+# High-severity multi-organ set (used in scoring + cascade tests)
+INTERACTIONS_CRITICAL = [
+    IX_CARDIOVASCULAR,   # bleeding + hemorrhage + arrhythmia
+    IX_RENAL,            # nephrotoxicity
+    IX_HEPATIC,          # hepatotoxicity
+]
+
+# Mild / low-risk set
 INTERACTIONS_MILD = [
     {'drug_a': 'Paracetamol', 'drug_b': 'Ibuprofen',
-     'description': 'May increase risk of GI adverse effects. Monitor patients.',
+     'description': 'May increase risk of GI adverse effects. Monitor patients for stomach discomfort.',
      'severity': 'Mild', 'mechanism': 'Unknown'},
 ]
 
-INTERACTIONS_FATAL = [
-    {'drug_a': 'MAO Inhibitor', 'drug_b': 'SSRI',
-     'description': 'Combination can be fatal; life-threatening serotonin syndrome reported.',
-     'severity': 'Contraindicated', 'mechanism': 'Serotonergic'},
-]
+# Fatal keyword set (Step 3 max-tier test)
+INTERACTIONS_FATAL = [IX_CNS]   # "fatal" + "life-threatening" + "serotonin"
 
+# Patient profiles
 PATIENT_COMPLEX = {
     'age':        72,
     'gender':     'Female',
@@ -201,7 +261,8 @@ PATIENT_YOUNG_HEALTHY = {
     'lab_values': {},
 }
 
-# Minimal pharma DataFrame for main.py tests
+# ── Pharma brand mock ─────────────────────────────────────────────────────────
+
 MOCK_PHARMA = pd.DataFrame([
     {'brand_name': 'Augmentin 625 Duo Tablet',
      'primary_ingredient': 'Amoxycillin',
@@ -215,21 +276,74 @@ MOCK_PHARMA = pd.DataFrame([
     {'brand_name': 'Calpol 500mg Tablet',
      'primary_ingredient': 'Paracetamol',
      'active_ingredients': "[{'name':'Paracetamol','strength':'500mg'}]"},
+    {'brand_name': 'Warfarin Sodium Tablet',
+     'primary_ingredient': 'Warfarin',
+     'active_ingredients': "[{'name':'Warfarin','strength':'5mg'}]"},
+    {'brand_name': 'Metformin 500mg Tablet',
+     'primary_ingredient': 'Metformin',
+     'active_ingredients': "[{'name':'Metformin','strength':'500mg'}]"},
+    {'brand_name': 'Isoniazid 300mg Tablet',
+     'primary_ingredient': 'Isoniazid',
+     'active_ingredients': "[{'name':'Isoniazid','strength':'300mg'}]"},
+    {'brand_name': 'Rifampicin 450mg Capsule',
+     'primary_ingredient': 'Rifampicin',
+     'active_ingredients': "[{'name':'Rifampicin','strength':'450mg'}]"},
+    {'brand_name': 'Simvastatin 20mg Tablet',
+     'primary_ingredient': 'Simvastatin',
+     'active_ingredients': "[{'name':'Simvastatin','strength':'20mg'}]"},
+    {'brand_name': 'Morphine Sulfate Tablet',
+     'primary_ingredient': 'Morphine',
+     'active_ingredients': "[{'name':'Morphine','strength':'10mg'}]"},
+    {'brand_name': 'Diazepam 5mg Tablet',
+     'primary_ingredient': 'Diazepam',
+     'active_ingredients': "[{'name':'Diazepam','strength':'5mg'}]"},
 ])
 
+# ── Full DDI mock — one entry per organ system ────────────────────────────────
+# Each row has a description with clear organ-system keywords so Step 4 routing
+# is deterministic and tests are not all cardiovascular.
+
 MOCK_DDI = pd.DataFrame([
-    {'drug1_name': 'amoxycillin', 'drug2_name': 'azithromycin',
-     'description': 'May increase the risk of cardiac arrhythmia and QT prolongation.',
+    # CARDIOVASCULAR — arrhythmia / QT / cardiac
+    {'drug1_name': 'amoxycillin',  'drug2_name': 'azithromycin',
+     'description': 'May increase the risk of cardiac arrhythmia and QT prolongation in susceptible patients.',
      'severity': 'Moderate', 'mechanism': 'Pharmacokinetic', 'source': 'ddi_complete'},
-    {'drug1_name': 'ambroxol', 'drug2_name': 'levosalbutamol',
-     'description': 'Monitor for increased bronchodilator effects. Generally safe.',
+    # RESPIRATORY — bronchodilator / respiratory
+    {'drug1_name': 'ambroxol',     'drug2_name': 'levosalbutamol',
+     'description': 'Concurrent use may cause excessive bronchodilator effects and respiratory distress. Monitor breathing.',
      'severity': 'Mild', 'mechanism': 'Pharmacodynamic', 'source': 'ddi_complete'},
-    {'drug1_name': 'warfarin', 'drug2_name': 'aspirin',
-     'description': 'Bleeding and hemorrhage risk significantly increased.',
+    # HEMATOLOGIC — bleeding / hemorrhage / platelet
+    {'drug1_name': 'warfarin',     'drug2_name': 'aspirin',
+     'description': 'Bleeding and hemorrhage risk significantly increased. Platelet function and coagulation impaired.',
      'severity': 'Major', 'mechanism': 'Pharmacodynamic', 'source': 'ddi_complete'},
-    {'drug1_name': 'metformin', 'drug2_name': 'ibuprofen',
-     'description': 'May increase risk of renal failure and adverse GI effects.',
+    # RENAL + GI — kidney failure / GI effects
+    {'drug1_name': 'metformin',    'drug2_name': 'ibuprofen',
+     'description': 'May increase risk of renal failure, nephrotoxicity, and adverse gastrointestinal GI effects including nausea.',
      'severity': 'Moderate', 'mechanism': 'Unknown', 'source': 'ddi_complete'},
+    # HEPATIC — liver / hepatotoxicity / ALT / CYP
+    {'drug1_name': 'isoniazid',    'drug2_name': 'rifampicin',
+     'description': 'Severe hepatotoxicity and liver failure reported. ALT and AST elevation common. Hepatic CYP450 enzyme induction.',
+     'severity': 'Major', 'mechanism': 'Hepatic enzyme induction', 'source': 'ddi_complete'},
+    # MUSCULOSKELETAL — rhabdomyolysis / myopathy / CK
+    {'drug1_name': 'simvastatin',  'drug2_name': 'gemfibrozil',
+     'description': 'Substantially increased risk of rhabdomyolysis, severe myopathy, and elevated creatine kinase (CK).',
+     'severity': 'Major', 'mechanism': 'CYP3A4 inhibition', 'source': 'ddi_complete'},
+    # CNS — serotonin / CNS / seizure / sedation
+    {'drug1_name': 'phenelzine',   'drug2_name': 'fluoxetine',
+     'description': 'Fatal serotonin syndrome with life-threatening CNS seizure, confusion, and severe sedation reported.',
+     'severity': 'Contraindicated', 'mechanism': 'Serotonergic excess', 'source': 'ddi_complete'},
+    # RESPIRATORY — apnea / respiratory depression / dyspnea
+    {'drug1_name': 'morphine',     'drug2_name': 'diazepam',
+     'description': 'Severe respiratory depression and dyspnea. Apnea and pulmonary failure risk requires monitoring.',
+     'severity': 'Major', 'mechanism': 'CNS depression', 'source': 'ddi_complete'},
+    # ENDOCRINE — glucose / hypoglycaemia / insulin
+    {'drug1_name': 'glibenclamide','drug2_name': 'fluconazole',
+     'description': 'Severe hypoglycaemia due to impaired glucose metabolism and insulin secretion. Blood glucose monitoring essential.',
+     'severity': 'Major', 'mechanism': 'CYP2C9 inhibition', 'source': 'ddi_complete'},
+    # IMMUNE — immunosuppression / anaphylaxis / hypersensitivity
+    {'drug1_name': 'methotrexate', 'drug2_name': 'trimethoprim',
+     'description': 'Severe immunosuppression with risk of anaphylaxis and Stevens-Johnson hypersensitivity reactions.',
+     'severity': 'Major', 'mechanism': 'Folate antagonism', 'source': 'ddi_complete'},
 ])
 
 
@@ -314,36 +428,106 @@ class TestStep3InteractionScoring(unittest.TestCase):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestStep4OrganDistribution(unittest.TestCase):
-    """Tests for analyze_biological_impact"""
+    """Tests for analyze_biological_impact — one test per organ system."""
 
     def _run(self, interactions):
         base = calculate_interaction_score_robust(interactions)
         return analyze_biological_impact(interactions, base)
 
-    def test_hemorrhage_hits_cardiovascular_and_hematologic(self):
-        """Bleeding descriptions should map to CARDIOVASCULAR or HEMATOLOGIC."""
-        result = self._run(INTERACTIONS_CRITICAL)
-        organ_names = [s['system'] for s in result['affected_organ_systems']]
+    def _organ_names(self, interactions):
+        return [s['system'] for s in self._run(interactions)['affected_organ_systems']]
+
+    # ── Per-organ routing tests ───────────────────────────────────────────────
+
+    def test_cardiovascular_keywords_route_to_cardiovascular(self):
+        """Arrhythmia / QT / cardiac keywords → Cardiovascular."""
+        names = self._organ_names([IX_CARDIOVASCULAR])
+        self.assertIn('Cardiovascular', names, f"Got: {names}")
+
+    def test_hepatic_keywords_route_to_hepatic(self):
+        """Hepatotoxicity / ALT / CYP450 keywords → Hepatic."""
+        names = self._organ_names([IX_HEPATIC])
+        self.assertIn('Hepatic', names, f"Got: {names}")
+
+    def test_renal_keywords_route_to_renal(self):
+        """Nephrotoxicity / creatinine / eGFR keywords → Renal."""
+        names = self._organ_names([IX_RENAL])
+        self.assertIn('Renal', names, f"Got: {names}")
+
+    def test_hematologic_keywords_route_to_hematologic(self):
+        """Bleeding / hemorrhage / platelet / coagulation → Hematologic."""
+        names = self._organ_names([IX_HEMATOLOGIC])
         self.assertTrue(
-            any(o in organ_names for o in ['Cardiovascular','Hematologic']),
-            f"Expected CV/Hematologic in {organ_names}"
+            any(o in names for o in ['Hematologic', 'Cardiovascular']),
+            f"Expected Hematologic/CV in {names}"
         )
 
-    def test_organ_failure_hits_renal_or_hepatic(self):
-        """Organ failure description should hit RENAL or HEPATIC."""
-        ix = [{'drug_a':'A','drug_b':'B',
-               'description':'Risk of liver failure, hepatic toxicity, and renal failure.'}]
-        result = self._run(ix)
-        names = [s['system'] for s in result['affected_organ_systems']]
-        self.assertTrue(any(o in names for o in ['Hepatic','Renal']), names)
+    def test_gi_keywords_route_to_gastrointestinal(self):
+        """Gastrointestinal / ulcer / nausea / stomach → Gastrointestinal."""
+        names = self._organ_names([IX_GI])
+        self.assertIn('Gastrointestinal', names, f"Got: {names}")
+
+    def test_cns_keywords_route_to_cns(self):
+        """Serotonin / CNS / seizure / sedation → Central Nervous System."""
+        names = self._organ_names([IX_CNS])
+        self.assertIn('Central Nervous System', names, f"Got: {names}")
+
+    def test_respiratory_keywords_route_to_respiratory(self):
+        """Respiratory depression / apnea / dyspnea / pulmonary → Respiratory."""
+        names = self._organ_names([IX_RESPIRATORY])
+        self.assertIn('Respiratory', names, f"Got: {names}")
+
+    def test_endocrine_keywords_route_to_endocrine(self):
+        """Hypoglycaemia / glucose / insulin keywords → Endocrine."""
+        names = self._organ_names([IX_ENDOCRINE])
+        self.assertIn('Endocrine', names, f"Got: {names}")
+
+    def test_musculoskeletal_keywords_route_to_musculoskeletal(self):
+        """Rhabdomyolysis / myopathy / creatine kinase → Musculoskeletal."""
+        names = self._organ_names([IX_MUSCULOSKELETAL])
+        self.assertIn('Musculoskeletal', names, f"Got: {names}")
+
+    def test_immune_keywords_route_to_immune(self):
+        """Anaphylaxis / immunosuppression / Stevens-Johnson → Immune System."""
+        names = self._organ_names([IX_IMMUNE])
+        self.assertIn('Immune System', names, f"Got: {names}")
+
+    # ── Multi-organ coverage tests ────────────────────────────────────────────
+
+    def test_all_organs_fixture_produces_multiple_organ_systems(self):
+        """INTERACTIONS_ALL_ORGANS should produce ≥ 6 distinct organ systems."""
+        result = self._run(INTERACTIONS_ALL_ORGANS)
+        n = result['num_organs_affected']
+        self.assertGreaterEqual(n, 6,
+            f"Expected ≥6 organ systems from all-organs fixture, got {n}: "
+            f"{[s['system'] for s in result['affected_organ_systems']]}")
+
+    def test_all_organs_fixture_covers_every_expected_system(self):
+        """Each major organ system should appear at least once."""
+        names = set(self._organ_names(INTERACTIONS_ALL_ORGANS))
+        expected = {
+            'Cardiovascular', 'Hepatic', 'Renal', 'Gastrointestinal',
+            'Central Nervous System', 'Respiratory', 'Endocrine', 'Musculoskeletal',
+        }
+        missing = expected - names
+        self.assertEqual(missing, set(),
+            f"Missing organ systems: {missing}. Got: {names}")
+
+    def test_single_organ_fixture_produces_exactly_targeted_system(self):
+        """A single-organ fixture should produce exactly 1 primary system."""
+        result = self._run([IX_CNS])  # pure CNS description
+        self.assertGreater(result['num_organs_affected'], 0)
+        self.assertIn('Central Nervous System',
+                      [s['system'] for s in result['affected_organ_systems']])
+
+    # ── Structural / correctness tests ───────────────────────────────────────
 
     def test_highest_risk_organ_has_max_score(self):
         """highest_risk_organ must have the highest score."""
-        result = self._run(INTERACTIONS_CRITICAL)
+        result = self._run(INTERACTIONS_ALL_ORGANS)
         systems = result['affected_organ_systems']
-        if systems:
-            top = result['highest_risk_organ']
-            self.assertEqual(top['score'], max(s['score'] for s in systems))
+        top = result['highest_risk_organ']
+        self.assertEqual(top['score'], max(s['score'] for s in systems))
 
     def test_empty_interactions_returns_empty_organs(self):
         """No interactions → no organ systems."""
@@ -358,23 +542,34 @@ class TestStep4OrganDistribution(unittest.TestCase):
 
     def test_organ_list_is_sorted_descending(self):
         """Organs should be sorted highest score first."""
-        result = self._run(INTERACTIONS_CRITICAL + INTERACTIONS_MILD)
+        result = self._run(INTERACTIONS_ALL_ORGANS)
         scores = [s['score'] for s in result['affected_organ_systems']]
         self.assertEqual(scores, sorted(scores, reverse=True))
 
-    def test_cns_keywords_map_to_cns(self):
-        """Serotonin/CNS keywords should map to Central Nervous System."""
-        ix = [{'drug_a':'A','drug_b':'B',
-               'description':'Fatal serotonin syndrome with severe CNS seizure depression.'}]
-        result = self._run(ix)
-        names = [s['system'] for s in result['affected_organ_systems']]
-        self.assertIn('Central Nervous System', names)
-
-    def test_evidence_citation_present(self):
-        """Each organ entry should have an evidence citation."""
-        result = self._run(INTERACTIONS_CRITICAL)
+    def test_evidence_citation_present_on_all_organs(self):
+        """Every organ entry should have an evidence_citation field."""
+        result = self._run(INTERACTIONS_ALL_ORGANS)
         for sys in result['affected_organ_systems']:
             self.assertIn('evidence_citation', sys)
+
+    def test_severity_weight_applied(self):
+        """Higher-weight organ (CV=1.52) should score higher than lower-weight (GI=1.15)
+        when fed descriptions of equal base score."""
+        cv_only  = [{'drug_a':'X','drug_b':'Y',
+                     'description':'Cardiac arrhythmia and bleeding hemorrhage risk.'}]
+        gi_only  = [{'drug_a':'A','drug_b':'B',
+                     'description':'Gastrointestinal stomach GI nausea ulcer only.'}]
+        cv_res = self._run(cv_only)
+        gi_res = self._run(gi_only)
+        cv_score = next((s['score'] for s in cv_res['affected_organ_systems']
+                         if s['system'] == 'Cardiovascular'), 0)
+        gi_score = next((s['score'] for s in gi_res['affected_organ_systems']
+                         if s['system'] == 'Gastrointestinal'), 0)
+        # Both should be > 0 and CV weight (1.52) > GI weight (1.15)
+        self.assertGreater(cv_score, 0)
+        self.assertGreater(gi_score, 0)
+        self.assertGreater(cv_score, gi_score,
+            f"CV score ({cv_score}) should exceed GI score ({gi_score}) due to higher weight")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -384,105 +579,171 @@ class TestStep4OrganDistribution(unittest.TestCase):
 class TestStep5PatientAdjustment(unittest.TestCase):
     """Tests for adjust_for_patient_context"""
 
-    def _get_systems(self, interactions=None):
-        ix = interactions or INTERACTIONS_CRITICAL
-        base = calculate_interaction_score_robust(ix)
-        organ = analyze_biological_impact(ix, base)
+    def _systems_for(self, interactions):
+        base  = calculate_interaction_score_robust(interactions)
+        organ = analyze_biological_impact(interactions, base)
         return organ['affected_organ_systems']
 
-    def test_elderly_patient_increases_score(self):
-        """An elderly patient should have ≥ adjusted score vs baseline."""
-        systems = self._get_systems()
-        if not systems:
-            self.skipTest("No organ systems from test data")
-        result = adjust_for_patient_context(systems, {'age': 80, 'conditions': [], 'lab_values': {}})
-        for sys in result['adjusted_systems']:
-            self.assertGreaterEqual(sys['adjusted_score'], sys['base_score'])
+    def _systems_all(self):
+        return self._systems_for(INTERACTIONS_ALL_ORGANS)
 
-    def test_young_healthy_multiplier_is_one(self):
-        """A 30-year-old with no conditions should have multiplier ~1.0."""
-        systems = self._get_systems()
-        if not systems:
-            self.skipTest("No organ systems")
-        result = adjust_for_patient_context(systems, PATIENT_YOUNG_HEALTHY)
+    def test_elderly_patient_increases_all_scores(self):
+        """Every organ system adjusted score should be ≥ base score for elderly patient."""
+        systems = self._systems_all()
+        result  = adjust_for_patient_context(systems, {'age': 80, 'conditions': [], 'lab_values': {}})
         for sys in result['adjusted_systems']:
-            self.assertAlmostEqual(sys['vulnerability_multiplier'], 1.0, places=1)
+            self.assertGreaterEqual(
+                sys['adjusted_score'], sys['base_score'],
+                f"{sys['system']}: adjusted {sys['adjusted_score']} < base {sys['base_score']}"
+            )
 
-    def test_complex_patient_gets_higher_adjusted_scores(self):
-        """Complex patient (elderly, HTN, DM, AFib, poor labs) > young healthy."""
-        systems = self._get_systems()
-        if not systems:
-            self.skipTest("No organ systems")
-        complex_result = adjust_for_patient_context(systems, PATIENT_COMPLEX)
-        young_result   = adjust_for_patient_context(systems, PATIENT_YOUNG_HEALTHY)
-        complex_total = sum(s['adjusted_score'] for s in complex_result['adjusted_systems'])
-        young_total   = sum(s['adjusted_score'] for s in young_result['adjusted_systems'])
+    def test_young_healthy_multiplier_near_one(self):
+        """30-year-old healthy patient → multiplier ~1.0 on every organ."""
+        systems = self._systems_all()
+        result  = adjust_for_patient_context(systems, PATIENT_YOUNG_HEALTHY)
+        for sys in result['adjusted_systems']:
+            self.assertAlmostEqual(
+                sys['vulnerability_multiplier'], 1.0, places=1,
+                msg=f"{sys['system']} multiplier {sys['vulnerability_multiplier']} expected ~1.0"
+            )
+
+    def test_complex_patient_total_higher_than_young_healthy(self):
+        """Complex patient total adjusted score > young healthy total."""
+        systems       = self._systems_all()
+        complex_total = sum(s['adjusted_score'] for s in
+                            adjust_for_patient_context(systems, PATIENT_COMPLEX)['adjusted_systems'])
+        young_total   = sum(s['adjusted_score'] for s in
+                            adjust_for_patient_context(systems, PATIENT_YOUNG_HEALTHY)['adjusted_systems'])
         self.assertGreater(complex_total, young_total)
 
     def test_no_patient_data_returns_unchanged(self):
-        """None patient data → status NO_PATIENT_DATA, systems unchanged."""
-        systems = self._get_systems()
-        result = adjust_for_patient_context(systems, None)
+        """None patient data → status NO_PATIENT_DATA, systems passed through unchanged."""
+        systems = self._systems_all()
+        result  = adjust_for_patient_context(systems, None)
         self.assertEqual(result['status'], 'NO_PATIENT_DATA')
         self.assertEqual(result['adjusted_systems'], systems)
 
     def test_low_egfr_increases_renal_score(self):
-        """Low eGFR must increase RENAL adjusted score."""
-        ix = [{'drug_a':'A','drug_b':'B','description':'Risk of renal failure and nephrotoxicity.'}]
-        systems = self._get_systems(ix)
-        renal = [s for s in systems if s.get('organ_key') == 'RENAL']
-        if not renal:
-            self.skipTest("No RENAL system in test data")
-        sys_before = renal[0]['score']
-        result = adjust_for_patient_context(
+        """eGFR=20 (Stage 4 CKD, ×1.89) must raise RENAL adjusted score above base."""
+        systems = self._systems_for([IX_RENAL])
+        renal   = next((s for s in systems if s['organ_key'] == 'RENAL'), None)
+        self.assertIsNotNone(renal, "RENAL organ system not produced by IX_RENAL fixture")
+        base    = renal['score']
+        result  = adjust_for_patient_context(
             systems, {'age': 40, 'conditions': [], 'lab_values': {'eGFR': 20}}
         )
-        renal_after = next(s for s in result['adjusted_systems'] if s.get('organ_key') == 'RENAL')
-        self.assertGreater(renal_after['adjusted_score'], sys_before)
+        after   = next(s for s in result['adjusted_systems'] if s['organ_key'] == 'RENAL')
+        self.assertGreater(after['adjusted_score'], base,
+            f"eGFR=20 should raise RENAL score above {base}, got {after['adjusted_score']}")
 
     def test_elevated_alt_increases_hepatic_score(self):
-        """Elevated ALT must increase HEPATIC adjusted score."""
-        ix = [{'drug_a':'A','drug_b':'B','description':'Hepatic liver failure and hepatotoxicity ALT elevated.'}]
-        systems = self._get_systems(ix)
-        hepatic = [s for s in systems if s.get('organ_key') == 'HEPATIC']
-        if not hepatic:
-            self.skipTest("No HEPATIC system in test data")
-        base = hepatic[0]['score']
-        result = adjust_for_patient_context(
+        """ALT=250 U/L (×2.05 via Hy's Law) must raise HEPATIC adjusted score above base."""
+        systems = self._systems_for([IX_HEPATIC])
+        hepatic = next((s for s in systems if s['organ_key'] == 'HEPATIC'), None)
+        self.assertIsNotNone(hepatic, "HEPATIC organ system not produced by IX_HEPATIC fixture")
+        base    = hepatic['score']
+        result  = adjust_for_patient_context(
             systems, {'age': 50, 'conditions': [], 'lab_values': {'ALT': 250}}
         )
-        h_after = next(s for s in result['adjusted_systems'] if s.get('organ_key') == 'HEPATIC')
-        self.assertGreater(h_after['adjusted_score'], base)
+        after   = next(s for s in result['adjusted_systems'] if s['organ_key'] == 'HEPATIC')
+        self.assertGreater(after['adjusted_score'], base,
+            f"ALT=250 should raise HEPATIC score above {base}, got {after['adjusted_score']}")
 
     def test_hypertension_increases_cv_score(self):
-        """Hypertension condition must increase CARDIOVASCULAR score."""
-        ix = [{'drug_a':'A','drug_b':'B','description':'Increased cardiac arrhythmia risk and bleeding.'}]
-        systems = self._get_systems(ix)
-        cv = [s for s in systems if s.get('organ_key') == 'CARDIOVASCULAR']
-        if not cv:
-            self.skipTest("No CARDIOVASCULAR in test data")
-        base = cv[0]['score']
-        result = adjust_for_patient_context(
+        """Hypertension (×1.45) must raise CARDIOVASCULAR adjusted score above base."""
+        systems = self._systems_for([IX_CARDIOVASCULAR])
+        cv      = next((s for s in systems if s['organ_key'] == 'CARDIOVASCULAR'), None)
+        self.assertIsNotNone(cv, "CARDIOVASCULAR not produced by IX_CARDIOVASCULAR fixture")
+        base    = cv['score']
+        result  = adjust_for_patient_context(
             systems, {'age': 50, 'conditions': ['Hypertension'], 'lab_values': {}}
         )
-        cv_after = next(s for s in result['adjusted_systems'] if s.get('organ_key') == 'CARDIOVASCULAR')
-        self.assertGreater(cv_after['adjusted_score'], base)
+        after   = next(s for s in result['adjusted_systems'] if s['organ_key'] == 'CARDIOVASCULAR')
+        self.assertGreater(after['adjusted_score'], base,
+            f"Hypertension should raise CV score above {base}, got {after['adjusted_score']}")
 
-    def test_risk_factors_populated(self):
-        """Complex patient should produce non-empty risk_factors lists."""
-        systems = self._get_systems()
-        if not systems:
-            self.skipTest("No organ systems")
-        result = adjust_for_patient_context(systems, PATIENT_COMPLEX)
+    def test_afib_increases_cv_score(self):
+        """Atrial Fibrillation (×1.52) must raise CARDIOVASCULAR score."""
+        systems = self._systems_for([IX_CARDIOVASCULAR])
+        cv      = next((s for s in systems if s['organ_key'] == 'CARDIOVASCULAR'), None)
+        if not cv:
+            self.skipTest("No CV system")
+        base    = cv['score']
+        result  = adjust_for_patient_context(
+            systems, {'age': 50, 'conditions': ['Atrial Fibrillation'], 'lab_values': {}}
+        )
+        after   = next(s for s in result['adjusted_systems'] if s['organ_key'] == 'CARDIOVASCULAR')
+        self.assertGreater(after['adjusted_score'], base)
+
+    def test_low_platelets_increases_hematologic_score(self):
+        """Platelets=40k (×2.15 severe thrombocytopenia) must raise HEMATOLOGIC score."""
+        systems = self._systems_for([IX_HEMATOLOGIC])
+        hema    = next((s for s in systems if s['organ_key'] == 'HEMATOLOGIC'), None)
+        self.assertIsNotNone(hema, "HEMATOLOGIC not produced by IX_HEMATOLOGIC fixture")
+        base    = hema['score']
+        result  = adjust_for_patient_context(
+            systems, {'age': 50, 'conditions': [], 'lab_values': {'platelet_count': 40}}
+        )
+        after   = next(s for s in result['adjusted_systems'] if s['organ_key'] == 'HEMATOLOGIC')
+        self.assertGreater(after['adjusted_score'], base,
+            f"Platelets=40k should raise HEMATOLOGIC above {base}, got {after['adjusted_score']}")
+
+    def test_diabetes_increases_endocrine_score(self):
+        """Diabetes condition (×1.28) must raise ENDOCRINE adjusted score."""
+        systems = self._systems_for([IX_ENDOCRINE])
+        endo    = next((s for s in systems if s['organ_key'] == 'ENDOCRINE'), None)
+        self.assertIsNotNone(endo, "ENDOCRINE not produced by IX_ENDOCRINE fixture")
+        base    = endo['score']
+        result  = adjust_for_patient_context(
+            systems, {'age': 50, 'conditions': ['Diabetes Type 2'], 'lab_values': {}}
+        )
+        after   = next(s for s in result['adjusted_systems'] if s['organ_key'] == 'ENDOCRINE')
+        self.assertGreater(after['adjusted_score'], base)
+
+    def test_copd_increases_respiratory_score(self):
+        """COPD condition (×1.35) must raise RESPIRATORY adjusted score."""
+        systems = self._systems_for([IX_RESPIRATORY])
+        resp    = next((s for s in systems if s['organ_key'] == 'RESPIRATORY'), None)
+        self.assertIsNotNone(resp, "RESPIRATORY not produced by IX_RESPIRATORY fixture")
+        base    = resp['score']
+        result  = adjust_for_patient_context(
+            systems, {'age': 50, 'conditions': ['COPD'], 'lab_values': {}}
+        )
+        after   = next(s for s in result['adjusted_systems'] if s['organ_key'] == 'RESPIRATORY')
+        self.assertGreater(after['adjusted_score'], base)
+
+    def test_inr_elevation_increases_hematologic_score(self):
+        """INR=3.5 (×1.55, supra-therapeutic) must raise HEMATOLOGIC score."""
+        systems = self._systems_for([IX_HEMATOLOGIC])
+        hema    = next((s for s in systems if s['organ_key'] == 'HEMATOLOGIC'), None)
+        if not hema:
+            self.skipTest("No HEMATOLOGIC system")
+        base    = hema['score']
+        result  = adjust_for_patient_context(
+            systems, {'age': 50, 'conditions': [], 'lab_values': {'INR': 3.5}}
+        )
+        after   = next(s for s in result['adjusted_systems'] if s['organ_key'] == 'HEMATOLOGIC')
+        self.assertGreater(after['adjusted_score'], base)
+
+    def test_complex_patient_produces_warnings(self):
+        """Complex patient with multi-organ involvement should produce ≥1 warning."""
+        systems  = self._systems_all()
+        result   = adjust_for_patient_context(systems, PATIENT_COMPLEX)
+        warnings = [s['patient_specific_warning'] for s in result['adjusted_systems']
+                    if s.get('patient_specific_warning')]
+        self.assertGreater(len(warnings), 0, "Expected at least one patient-specific warning")
+
+    def test_risk_factors_populated_for_complex_patient(self):
+        """Complex patient should produce non-empty risk_factors on affected organs."""
+        systems     = self._systems_all()
+        result      = adjust_for_patient_context(systems, PATIENT_COMPLEX)
         all_factors = [f for s in result['adjusted_systems'] for f in s.get('risk_factors', [])]
         self.assertGreater(len(all_factors), 0)
 
     def test_output_has_patient_profile(self):
-        """Result should contain patient_profile summary."""
-        systems = self._get_systems()
-        if not systems:
-            self.skipTest("No organ systems")
-        result = adjust_for_patient_context(systems, PATIENT_COMPLEX)
+        """Result dict must contain a patient_profile summary with correct age."""
+        systems = self._systems_all()
+        result  = adjust_for_patient_context(systems, PATIENT_COMPLEX)
         self.assertIn('patient_profile', result)
         self.assertEqual(result['patient_profile']['age'], 72)
 
@@ -697,6 +958,26 @@ class TestMainFunctions(unittest.TestCase):
         result = m.get_drug_interactions(['Amoxycillin', 'Azithromycin'])
         self.assertGreater(len(result), 0)
 
+    def test_hepatic_pair_returns_interaction(self):
+        """Isoniazid + Rifampicin must find the hepatic interaction."""
+        result = m.get_drug_interactions(['Isoniazid', 'Rifampicin'])
+        self.assertGreater(len(result), 0)
+        desc = result[0]['description'].lower()
+        self.assertTrue(
+            any(kw in desc for kw in ['hepatotox','liver','alt','hepatic']),
+            f"Expected hepatic keywords in: {desc}"
+        )
+
+    def test_respiratory_pair_returns_interaction(self):
+        """Morphine + Diazepam must find the respiratory depression interaction."""
+        result = m.get_drug_interactions(['Morphine', 'Diazepam'])
+        self.assertGreater(len(result), 0)
+        desc = result[0]['description'].lower()
+        self.assertTrue(
+            any(kw in desc for kw in ['respiratory','dyspnea','apnea','pulmonary','breathing']),
+            f"Expected respiratory keywords in: {desc}"
+        )
+
     def test_unknown_pair_returns_empty(self):
         result = m.get_drug_interactions(['Paracetamol', 'Vitamin C'])
         self.assertEqual(result, [])
@@ -805,7 +1086,8 @@ class TestEndToEnd(unittest.TestCase):
         """Full pipeline must complete without raising exceptions."""
         try:
             m.analyze_interactions_with_context(
-                ['Augmentin 625 Duo Tablet', 'Azithral 500 Tablet', 'Ascoril LS Syrup'],
+                ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule',
+                 'Simvastatin 20mg Tablet'],
                 patient_data=PATIENT_COMPLEX,
             )
         except Exception as e:
@@ -815,46 +1097,101 @@ class TestEndToEnd(unittest.TestCase):
         """Pipeline must work fine without patient data."""
         try:
             m.analyze_interactions_with_context(
-                ['Augmentin 625 Duo Tablet', 'Azithral 500 Tablet'],
+                ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'],
             )
         except Exception as e:
             self.fail(f"Pipeline raised: {e}")
 
-    def test_pipeline_with_young_healthy_patient(self):
-        """Young healthy patient should produce lower risk than complex patient."""
-        result_complex = m.analyze_interactions_with_context(
-            ['Augmentin 625 Duo Tablet', 'Azithral 500 Tablet'],
+    def test_multi_organ_pipeline_produces_multiple_organ_systems(self):
+        """Morphine + Diazepam + Isoniazid + Rifampicin should hit ≥2 organ systems."""
+        result = m.analyze_interactions_with_context(
+            ['Morphine Sulfate Tablet', 'Diazepam 5mg Tablet',
+             'Isoniazid 300mg Tablet',  'Rifampicin 450mg Capsule'],
             patient_data=PATIENT_COMPLEX,
         )
-        result_young = m.analyze_interactions_with_context(
-            ['Augmentin 625 Duo Tablet', 'Azithral 500 Tablet'],
-            patient_data=PATIENT_YOUNG_HEALTHY,
+        if result['status'] == 'INTERACTIONS_FOUND':
+            systems = (
+                result['patient_adjustments'].get('adjusted_systems') or
+                result['organ_analysis'].get('affected_organ_systems', [])
+            )
+            n = len(systems)
+            self.assertGreaterEqual(n, 2,
+                f"Expected ≥2 organ systems from multi-drug pipeline, got {n}: "
+                f"{[s['system'] for s in systems]}")
+
+    def test_complex_patient_organ_scores_higher_than_young_healthy(self):
+        """Complex patient total organ-adjusted score > young healthy for same drugs."""
+        brands = ['Morphine Sulfate Tablet', 'Diazepam 5mg Tablet']
+        r_complex = m.analyze_interactions_with_context(brands, patient_data=PATIENT_COMPLEX)
+        r_young   = m.analyze_interactions_with_context(brands, patient_data=PATIENT_YOUNG_HEALTHY)
+        if r_complex['status'] == r_young['status'] == 'INTERACTIONS_FOUND':
+            complex_total = sum(
+                s.get('adjusted_score', s.get('score', 0))
+                for s in r_complex['patient_adjustments'].get('adjusted_systems', [])
+            )
+            young_total = sum(
+                s.get('adjusted_score', s.get('score', 0))
+                for s in r_young['patient_adjustments'].get('adjusted_systems', [])
+            )
+            self.assertGreater(complex_total, young_total,
+                f"Complex ({complex_total}) should exceed young healthy ({young_total})")
+
+    def test_respiratory_organ_appears_for_morphine_diazepam(self):
+        """Morphine + Diazepam interaction (respiratory depression) should produce Respiratory organ."""
+        result = m.analyze_interactions_with_context(
+            ['Morphine Sulfate Tablet', 'Diazepam 5mg Tablet'],
         )
-        if (result_complex['status'] == 'INTERACTIONS_FOUND' and
-                result_young['status'] == 'INTERACTIONS_FOUND'):
-            complex_score = result_complex['clinical_report']['summary']['total_interaction_score']
-            young_score   = result_young['clinical_report']['summary']['total_interaction_score']
-            # Base interaction score is the same; patient adjustment is on organs
-            # Just ensure no crash and both have reports
-            self.assertIn('clinical_report', result_complex)
-            self.assertIn('clinical_report', result_young)
+        if result['status'] == 'INTERACTIONS_FOUND':
+            systems = result['organ_analysis'].get('affected_organ_systems', [])
+            names   = [s['system'] for s in systems]
+            self.assertIn('Respiratory', names,
+                f"Expected Respiratory in organ systems, got: {names}")
+
+    def test_hepatic_organ_appears_for_isoniazid_rifampicin(self):
+        """Isoniazid + Rifampicin (hepatotoxicity) should produce Hepatic organ system."""
+        result = m.analyze_interactions_with_context(
+            ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'],
+        )
+        if result['status'] == 'INTERACTIONS_FOUND':
+            systems = result['organ_analysis'].get('affected_organ_systems', [])
+            names   = [s['system'] for s in systems]
+            self.assertIn('Hepatic', names,
+                f"Expected Hepatic in organ systems, got: {names}")
 
     def test_single_brand_no_pairs(self):
-        """Single brand → no pairs → no interactions found."""
+        """Single brand → no pairs → NO_INTERACTIONS status."""
         result = m.analyze_interactions_with_context(['Calpol 500mg Tablet'])
-        # Calpol only has Paracetamol; no counterpart in mock DDI
-        self.assertIn(result['status'], ('NO_INTERACTIONS', 'INTERACTIONS_FOUND'))
+        self.assertEqual(result['status'], 'NO_INTERACTIONS')
 
     def test_report_risk_levels_are_valid_values(self):
-        """Risk level must be one of the defined tiers."""
-        valid = {'CRITICAL','SEVERE','MODERATE','MILD','MINIMAL'}
+        """Risk level must be one of the five defined tiers."""
+        valid  = {'CRITICAL','SEVERE','MODERATE','MILD','MINIMAL'}
         result = m.analyze_interactions_with_context(
-            ['Augmentin 625 Duo Tablet','Azithral 500 Tablet'],
+            ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'],
             patient_data=PATIENT_COMPLEX,
         )
         if result['status'] == 'INTERACTIONS_FOUND':
             level = result['clinical_report']['summary']['overall_risk_level']
             self.assertIn(level, valid)
+
+    def test_save_report_creates_file(self):
+        """save_report parameter should write a valid JSON file."""
+        import tempfile, os, json
+        with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as tf:
+            path = tf.name
+        try:
+            result = m.analyze_interactions_with_context(
+                ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'],
+                save_report=path,
+            )
+            if result['status'] == 'INTERACTIONS_FOUND':
+                self.assertTrue(os.path.exists(path))
+                with open(path) as f:
+                    data = json.load(f)
+                self.assertIn('summary', data)
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -170,7 +170,12 @@ _ORGAN_PATTERNS = {
         r'\b(muscle|myalgia|myopathy|rhabdomyolysis|creatine kinase|CK)\b',
     ],
     'IMMUNE_SYSTEM': [
-        r'\b(immune|allerg|anaphylax|hypersensitiv|immunosuppress|Stevens.Johnson)\b',
+        r'\b(immune system|autoimmune)\b',
+        r'\banaphylax',           # anaphylaxis / anaphylactic
+        r'\bimmuno',              # immunosuppression / immunosuppressed
+        r'\bhypersensitiv',       # hypersensitivity
+        r'\ballerg',              # allergic / allergy
+        r'Stevens.Johnson',       # Stevens-Johnson syndrome
     ],
 }
 
