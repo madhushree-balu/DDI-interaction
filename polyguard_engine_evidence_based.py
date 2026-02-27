@@ -1,7 +1,14 @@
 # polyguard_engine_evidence_based.py
 """
-PolyGuard Engine — Evidence-Based Scoring Pipeline (Steps 3-7).
-All parameters derived from peer-reviewed literature.
+PolyGuard Engine — NLP + Evidence-Based Scoring Pipeline (Steps 3-7).
+
+Steps 3 & 4 now use a real NLP pipeline (nlp_engine.py):
+  • TF-IDF + Logistic Regression severity scorer
+  • TF-IDF + Multi-label One-vs-Rest organ classifier
+  • Negation-aware tokeniser / lemmatiser
+  • TF-IDF cosine semantic similarity for nearest-neighbour explainability
+
+Steps 5-7 use evidence-based multipliers from peer-reviewed literature.
 """
 
 import re
@@ -17,6 +24,8 @@ from evidence_based_weights import (
     CASCADE_DETECTION_THRESHOLD,
 )
 
+from nlp_engine import analyse_interaction_batch, analyse_interaction_text
+
 
 # ─── Evidence helpers ─────────────────────────────────────────────────────────
 
@@ -28,193 +37,159 @@ def _cite(src) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 3 — INTERACTION SCORING
+# STEP 3 — NLP INTERACTION SCORING
 # ─────────────────────────────────────────────────────────────────────────────
-
-_SEVERITY_PATTERNS = [
-    ('critical', [
-        r'\b(fatal|death|lethal|life-?threatening)\b',
-        r'\b(cardiac arrest|respiratory (failure|arrest))\b',
-        r'\b(anaphylaxis|anaphylactic shock)\b',
-        r'\b(rhabdomyolysis)\b',
-    ], _ev(KEYWORD_SEVERITY_SCORES['fatal'])),
-
-    ('severe', [
-        r'\bh[ae]emorrhag(e|ing|ic)\b',
-        r'\bbleeding\b',
-        r'\b(toxicity|toxic)\b',
-        r'\b(organ|kidney|liver|renal|hepatic) failure\b',
-        r'\b(seizure|stroke|arrhythmia|torsades)\b',
-        r'\bQT (prolongation|interval)\b',
-    ], _ev(KEYWORD_SEVERITY_SCORES['severe'])),
-
-    ('moderate', [
-        r'\b(increased|elevated|higher) risk\b',
-        r'\b(decreased|reduced) (efficacy|effectiveness|effect)\b',
-        r'\badverse (effect|reaction|event)\b',
-        r'\b(hypotension|hypertension|bradycardia|tachycardia)\b',
-        r'\b(hypoglycae?mia|hyperglycae?mia)\b',
-        r'\b(serotonin syndrome|neuroleptic malignant)\b',
-    ], _ev(KEYWORD_SEVERITY_SCORES['moderate'])),
-
-    ('mild', [
-        r'\b(may (increase|decrease|affect|alter|enhance|inhibit))\b',
-        r'\b(monitor|caution|observe)\b',
-        r'\b(minor|slight|small) (change|effect|impact)\b',
-    ], _ev(KEYWORD_SEVERITY_SCORES['mild'])),
-]
-
-_NEGATION_PATTERNS = [
-    r'\b(no (significant |known )?(risk|evidence|increase|interaction))\b',
-    r'\b(unlikely|rare|minimal|negligible)\b',
-]
-
 
 def calculate_interaction_score_robust(interactions_list: List[Dict]) -> Dict:
     """
-    STEP 3 — Score each interaction using evidence-based keyword weights.
+    STEP 3 — Score each interaction using the NLP severity classifier.
+
+    Replaces hand-crafted regex with:
+      • TF-IDF + Logistic Regression (trained on 99 labelled DrugBank sentences)
+      • Negation-aware preprocessing (reduces score to 30% when cue detected)
+      • Confidence-weighted score within severity bucket
+
     Returns total score, per-interaction breakdown, and overall risk level.
     """
+    if not interactions_list:
+        return {
+            'total_score':        0,
+            'risk_level':         'MINIMAL',
+            'risk_color':         '⚪',
+            'recommendation':     '✓  No interactions to analyse',
+            'num_interactions':   0,
+            'detailed_breakdown': [],
+            'methodology':        'NLP: TF-IDF + Logistic Regression severity scorer',
+        }
+
+    # Run NLP batch analysis
+    enriched = analyse_interaction_batch(interactions_list)
+
     total_score = 0
-    breakdown = []
+    breakdown   = []
 
-    for ix in interactions_list:
-        text = ix.get('description', '').lower()
-        score = 0
-        matched = []
-        citations = []
+    for item in enriched:
+        nlp   = item['nlp']
+        score = nlp['score']
 
-        has_negation = any(re.search(p, text) for p in _NEGATION_PATTERNS)
+        # Evidence citation for the severity tier
+        tier_key_map = {
+            'CRITICAL': 'fatal', 'SEVERE': 'severe',
+            'MODERATE': 'moderate', 'MILD': 'mild', 'MINIMAL': 'mild',
+        }
+        tier_key = tier_key_map.get(nlp['severity'], 'mild')
+        citation = _cite(KEYWORD_SEVERITY_SCORES.get(tier_key, 'mild'))
 
-        for level, patterns, base_score in _SEVERITY_PATTERNS:
-            for p in patterns:
-                m = re.search(p, text)
-                if m:
-                    s = int(base_score * 0.3) if has_negation else base_score
-                    score = max(score, s)
-                    matched.append(f"{level.upper()}: '{m.group(0)}' (+{s})")
-                    key = 'fatal' if level == 'critical' else level
-                    if key in KEYWORD_SEVERITY_SCORES:
-                        citations.append(_cite(KEYWORD_SEVERITY_SCORES[key]))
-                    break  # one match per level is enough
-            if score >= base_score:
-                break  # stop at first matched tier
+        # Nearest references for explainability
+        ref_texts = [
+            f"sim={r['similarity']:.2f}: {r['text'][:60]}…"
+            for r in nlp['nearest_refs']
+        ]
 
-        if score == 0:
-            score = 5
-            matched.append("Generic interaction (+5)")
-
-        severity = _severity_label(score)
         breakdown.append({
-            'drugs':             f"{ix.get('drug_a','?')} ↔ {ix.get('drug_b','?')}",
-            'description':       ix.get('description', ''),
-            'score':             score,
-            'severity':          severity,
-            'icon':              _severity_icon(severity),
-            'matched_keywords':  matched,
-            'evidence_citations':list(set(citations)),
-            'has_negation':      has_negation,
+            'drugs':              f"{item.get('drug_a','?')} ↔ {item.get('drug_b','?')}",
+            'description':        item.get('description', ''),
+            'score':              score,
+            'severity':           nlp['severity'],
+            'icon':               _severity_icon(nlp['severity']),
+            'has_negation':       nlp['is_negated'],
+            'processed_text':     nlp['processed_text'],
+            'severity_proba':     nlp['severity_proba'],     # model confidence
+            'organ_proba_vec':    nlp['organ_proba_vec'],    # per-organ probabilities
+            'nearest_refs':       ref_texts,                 # explainability
+            'evidence_citations': [citation],
+            'matched_keywords':   [                          # kept for backward compat
+                f"NLP: {nlp['severity']} (score {score})"
+                + (" [NEGATED → ×0.30]" if nlp['is_negated'] else "")
+            ],
         })
         total_score += score
 
     risk = _overall_risk(total_score, len(interactions_list))
 
     return {
-        'total_score':      total_score,
-        'risk_level':       risk['level'],
-        'risk_color':       risk['color'],
-        'recommendation':   risk['action'],
-        'num_interactions': len(interactions_list),
+        'total_score':        total_score,
+        'risk_level':         risk['level'],
+        'risk_color':         risk['color'],
+        'recommendation':     risk['action'],
+        'num_interactions':   len(interactions_list),
         'detailed_breakdown': breakdown,
-        'methodology': 'Evidence-based scoring via FDA MedDRA terminology and peer-reviewed literature',
+        'methodology': (
+            'NLP Step 3: TF-IDF (word n-grams 1-3) + Logistic Regression severity scorer '
+            'trained on 99 labelled DrugBank/MedDRA sentences. '
+            'Negation-aware preprocessing (score ×0.30 when negation detected). '
+            'Scores mapped to evidence-based severity tiers (FDA MedDRA v26.0).'
+        ),
     }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 4 — ORGAN SYSTEM DISTRIBUTION
+# STEP 4 — NLP ORGAN SYSTEM DISTRIBUTION
 # ─────────────────────────────────────────────────────────────────────────────
-
-_ORGAN_PATTERNS = {
-    'CARDIOVASCULAR': [
-        r'\b(cardiac|heart|coronary|myocardial|arrhythmia|QT|atrial|ventricular)\b',
-        r'\b(bleeding|haemorrhage|hemorrhage|anticoagulant|thrombo)\b',
-        r'\b(stroke|hypotension|hypertension|blood pressure)\b',
-    ],
-    'HEPATIC': [
-        r'\b(liver|hepatic|hepatotox|hepatocell|DILI|ALT|AST|bilirubin)\b',
-        r'\b(cytochrome|CYP\d|metabolism|metabol)\b',
-    ],
-    'RENAL': [
-        r'\b(kidney|renal|nephrotox|creatinine|eGFR|GFR|nephrop)\b',
-    ],
-    'HEMATOLOGIC': [
-        r'\b(blood|platelet|coagulat|anemia|anaemia|haematolog|INR|prothrombin)\b',
-        r'\b(bleeding|haemorrhage|hemorrhage|antithrombotic|antiplatelet)\b',
-    ],
-    'GASTROINTESTINAL': [
-        r'\b(gastrointestinal|GI|stomach|gastric|nausea|vomit|ulcer|bowel)\b',
-    ],
-    'CENTRAL_NERVOUS_SYSTEM': [
-        r'\b(CNS|brain|neural|seizure|epilep|sedation|drowsi|confusion)\b',
-        r'\b(serotonin|dopamine|norepinephrine|GABA|opioid)\b',
-        r'\b(cognitive|psychotic|hallucinat|delirium)\b',
-    ],
-    'RESPIRATORY': [
-        r'\b(respiratory|lung|pulmonary|dyspnea|dyspnoea|breathing|broncho)\b',
-        r'\b(apnea|apnoea|hypoxia|oxygen)\b',
-    ],
-    'ENDOCRINE': [
-        r'\b(glucose|glycae?mia|insulin|diabetes|thyroid|cortisol|hormone)\b',
-    ],
-    'MUSCULOSKELETAL': [
-        r'\b(muscle|myalgia|myopathy|rhabdomyolysis|creatine kinase|CK)\b',
-    ],
-    'IMMUNE_SYSTEM': [
-        r'\b(immune system|autoimmune)\b',
-        r'\banaphylax',           # anaphylaxis / anaphylactic
-        r'\bimmuno',              # immunosuppression / immunosuppressed
-        r'\bhypersensitiv',       # hypersensitivity
-        r'\ballerg',              # allergic / allergy
-        r'Stevens.Johnson',       # Stevens-Johnson syndrome
-    ],
-}
-
 
 def analyze_biological_impact(interactions_list: List[Dict], base_scores: Dict) -> Dict:
     """
-    STEP 4 — Map interaction scores onto organ systems using evidence-based weights.
+    STEP 4 — Map interaction scores onto organ systems using the NLP multi-label
+    organ classifier (TF-IDF + One-vs-Rest Logistic Regression).
+
+    Replaces hand-crafted regex organ patterns with a trained classifier that:
+      • Outputs per-organ probability vectors
+      • Handles multi-organ interactions (e.g. bleeding → CARDIOVASCULAR + HEMATOLOGIC)
+      • Weighs organ contributions by evidence-based severity weights from literature
+      • Uses classifier confidence as a scaling factor for the score contribution
     """
-    acc = defaultdict(lambda: {'score': 0, 'interaction_count': 0, 'evidence_source': None})
+    acc = defaultdict(lambda: {
+        'score': 0.0, 'interaction_count': 0, 'evidence_source': None,
+        'confidence_sum': 0.0,
+    })
 
     for idx, ix in enumerate(interactions_list):
-        text        = ix.get('description', '').lower()
+        description = ix.get('description', '')
         ix_score    = base_scores['detailed_breakdown'][idx]['score']
 
-        for organ, patterns in _ORGAN_PATTERNS.items():
-            hits = sum(1 for p in patterns if re.search(p, text))
-            if hits:
-                ev_src   = ORGAN_SEVERITY_WEIGHTS.get(organ)
-                weight   = _ev(ev_src) if ev_src else 1.0
-                contrib  = int((ix_score * 0.4) * weight * min(hits, 3))
-                acc[organ]['score']             += contrib
-                acc[organ]['interaction_count'] += 1
-                acc[organ]['evidence_source']    = ev_src
+        # ── NLP organ prediction ──────────────────────────────────────────────
+        # Use the pre-computed proba vector from Step 3 if available,
+        # otherwise run a fresh analysis.
+        bd  = base_scores['detailed_breakdown'][idx]
+        if 'organ_proba_vec' in bd:
+            organ_proba = bd['organ_proba_vec']
+        else:
+            organ_proba = analyse_interaction_text(description)['organ_proba_vec']
+
+        for organ, confidence in organ_proba.items():
+            if confidence < 0.15:          # ignore near-zero probability organs
+                continue
+
+            ev_src = ORGAN_SEVERITY_WEIGHTS.get(organ)
+            weight = _ev(ev_src) if ev_src else 1.0
+
+            # Score contribution = base_score × 0.4 × organ_weight × classifier_confidence
+            contrib = (ix_score * 0.4) * weight * confidence
+
+            acc[organ]['score']             += contrib
+            acc[organ]['interaction_count'] += 1
+            acc[organ]['confidence_sum']    += confidence
+            acc[organ]['evidence_source']    = ev_src
 
     systems = []
     for organ, data in acc.items():
-        ev   = data['evidence_source']
-        sev  = _severity_label(data['score'])
+        score = int(data['score'])
+        if score == 0:
+            continue
+        ev  = data['evidence_source']
+        sev = _severity_label(score)
         systems.append({
-            'system':            organ.replace('_', ' ').title(),
-            'organ_key':         organ,
-            'score':             data['score'],
-            'severity':          sev,
-            'icon':              _severity_icon(sev),
-            'interaction_count': data['interaction_count'],
-            'severity_weight':   _ev(ev) if ev else 1.0,
-            'evidence_citation': _cite(ev) if ev else 'N/A',
-            'evidence_rationale':ev.rationale if ev else 'Based on clinical practice',
-            'evidence_level':    ev.evidence_level if ev else 'N/A',
+            'system':             organ.replace('_', ' ').title(),
+            'organ_key':          organ,
+            'score':              score,
+            'severity':           sev,
+            'icon':               _severity_icon(sev),
+            'interaction_count':  data['interaction_count'],
+            'nlp_confidence':     round(data['confidence_sum'] / max(data['interaction_count'], 1), 3),
+            'severity_weight':    _ev(ev) if ev else 1.0,
+            'evidence_citation':  _cite(ev) if ev else 'N/A',
+            'evidence_rationale': ev.rationale if ev else 'Based on clinical practice',
+            'evidence_level':     ev.evidence_level if ev else 'N/A',
         })
 
     systems.sort(key=lambda x: x['score'], reverse=True)
@@ -223,7 +198,12 @@ def analyze_biological_impact(interactions_list: List[Dict], base_scores: Dict) 
         'affected_organ_systems': systems,
         'num_organs_affected':    len(systems),
         'highest_risk_organ':     systems[0] if systems else None,
-        'methodology':            'Organ weights from mortality/hospitalisation rates in peer-reviewed literature',
+        'methodology': (
+            'NLP Step 4: TF-IDF + One-vs-Rest Logistic Regression multi-label organ classifier '
+            '(10 classes, threshold=0.15). Score contribution = base_score × 0.4 × '
+            'organ_severity_weight × classifier_confidence. '
+            'Organ weights from peer-reviewed mortality/hospitalisation studies.'
+        ),
     }
 
 
@@ -431,7 +411,8 @@ def generate_clinical_report(
     patient_data:      Dict = None,
 ) -> Dict:
     """
-    STEP 7 — Assemble the final evidence-referenced clinical report.
+    STEP 7 — Assemble the final evidence-referenced clinical report,
+    including an Explainable AI section that surfaces the model's reasoning.
     """
     systems   = patient_adj.get('adjusted_systems') or organ_analysis.get('affected_organ_systems', [])
     max_organ = max((s.get('adjusted_score', s.get('score', 0)) for s in systems), default=0)
@@ -450,6 +431,9 @@ def generate_clinical_report(
     for c in cascade_detection.get('cascades', []):
         if c.get('evidence_citation'): citations.add(c['evidence_citation'])
 
+    # ── XAI SECTION ──────────────────────────────────────────────────────────
+    xai = _build_xai_section(base_scores, organ_analysis, systems)
+
     return {
         'summary': {
             'overall_risk_level':  overall['level'],
@@ -461,17 +445,19 @@ def generate_clinical_report(
             'num_organs_affected': len(systems),
             'num_cascades':        n_casc,
         },
-        'interaction_analysis':    base_scores,
-        'organ_system_analysis':   organ_analysis,
-        'patient_specific_analysis': patient_adj,
+        'interaction_analysis':          base_scores,
+        'organ_system_analysis':         organ_analysis,
+        'patient_specific_analysis':     patient_adj,
         'polypharmacy_cascade_analysis': cascade_detection,
+        'explainability':                xai,          # ← NEW
         'evidence_base': {
-            'all_citations':    sorted(c for c in citations if c and c != 'No citation'),
+            'all_citations': sorted(c for c in citations if c and c != 'No citation'),
             'methodology_summary': (
-                'All risk scores derived from peer-reviewed literature. '
-                'Organ weights from mortality/hospitalisation studies. '
-                'Patient adjustments from pharmacokinetic research and clinical guidelines. '
-                'Keyword scores from FDA MedDRA terminology.'
+                'Severity scored by TF-IDF + Logistic Regression (99-example training corpus). '
+                'Organ classification by TF-IDF + One-vs-Rest multi-label classifier (10 classes). '
+                'Negation detection reduces scores to 30%. '
+                'Organ weights from peer-reviewed mortality/hospitalisation studies. '
+                'Patient adjustments from pharmacokinetic research and clinical guidelines.'
             ),
             'key_sources': [
                 'FDA MedDRA Terminology v26.0 (2023)',
@@ -482,9 +468,118 @@ def generate_clinical_report(
             ],
         },
         'report_metadata': {
-            'analysis_version': 'PolyGuard v2.0 Evidence-Based',
+            'analysis_version':  'PolyGuard v2.1 NLP+Evidence-Based',
+            'nlp_model':         'TF-IDF + LR severity | TF-IDF + OvR multi-label organ classifier',
+            'training_examples': 99,
+            'organ_classes':     10,
             'validation_status': 'Evidence-derived parameters from peer-reviewed literature',
         },
+    }
+
+
+def _build_xai_section(
+    base_scores:    Dict,
+    organ_analysis: Dict,
+    systems:        List[Dict],
+) -> Dict:
+    """
+    Build the Explainable AI section of the report.
+
+    For every interaction, surfaces:
+      • The model's confidence distribution across severity tiers
+      • The 3 nearest training sentences (semantic similarity) with their known scores
+      • Whether negation was detected and what it changed
+      • The full organ probability vector (what organs the model considered)
+
+    For the overall prediction:
+      • Dominant evidence sources that drove the highest-scoring interactions
+      • Low-confidence warnings (when top-bucket prob < 0.5)
+    """
+    per_interaction = []
+    low_confidence_warnings = []
+
+    for item in base_scores['detailed_breakdown']:
+        sev_proba  = item.get('severity_proba', {})
+        organ_prob = item.get('organ_proba_vec', {})
+        neg        = item.get('has_negation', False)
+        score      = item['score']
+        severity   = item['severity']
+
+        # Confidence of the predicted bucket
+        confidence = sev_proba.get(severity, 0.0)
+
+        # Build severity confidence bar
+        sev_order = ['CRITICAL', 'SEVERE', 'MODERATE', 'MILD', 'MINIMAL']
+        sev_dist  = {k: round(sev_proba.get(k, 0.0), 3) for k in sev_order}
+
+        # Top-3 organs predicted by classifier
+        top_organs = sorted(organ_prob.items(), key=lambda x: x[1], reverse=True)[:3]
+        top_organs = [(o, round(p, 3)) for o, p in top_organs if p > 0.05]
+
+        # Nearest reference sentences
+        refs = item.get('nearest_refs', [])
+
+        # Negation explanation
+        neg_note = None
+        if neg:
+            neg_note = f"Negation detected — raw score discounted to 30% (score would be ~{score*3} without negation)"
+
+        entry = {
+            'drugs':           item['drugs'],
+            'predicted':       severity,
+            'score':           score,
+            'model_confidence': round(confidence, 3),
+            'severity_distribution': sev_dist,
+            'top_predicted_organs':  top_organs,
+            'nearest_training_refs': refs,
+            'negation_detected':     neg,
+            'negation_note':         neg_note,
+            'processed_text':        item.get('processed_text', ''),
+        }
+        per_interaction.append(entry)
+
+        # Flag low-confidence predictions for the clinician
+        if confidence < 0.45 and score > 10:
+            low_confidence_warnings.append(
+                f"{item['drugs']}: model confidence {confidence:.0%} for {severity} — "
+                f"manual review recommended"
+            )
+
+    # Overall model transparency summary
+    avg_confidence = (
+        sum(e['model_confidence'] for e in per_interaction) / len(per_interaction)
+        if per_interaction else 0.0
+    )
+
+    # Which organs had the strongest NLP signal across all interactions
+    organ_signal = {}
+    for item in base_scores['detailed_breakdown']:
+        for organ, prob in item.get('organ_proba_vec', {}).items():
+            organ_signal[organ] = organ_signal.get(organ, 0.0) + prob
+    top_signal_organs = sorted(organ_signal.items(), key=lambda x: x[1], reverse=True)[:5]
+
+    return {
+        'per_interaction':   per_interaction,
+        'model_transparency': {
+            'average_confidence':       round(avg_confidence, 3),
+            'low_confidence_warnings':  low_confidence_warnings,
+            'top_signal_organs':        [(o, round(p, 3)) for o, p in top_signal_organs],
+            'negated_interactions':     sum(1 for e in per_interaction if e['negation_detected']),
+            'nlp_methodology': (
+                'Severity: TF-IDF(word,1-3gram) → Logistic Regression '
+                '(5-class: MINIMAL/MILD/MODERATE/SEVERE/CRITICAL). '
+                'Organs: TF-IDF(word,1-3gram) → One-vs-Rest LR (10 binary classifiers). '
+                'Negation: detected by lexical cue scanning; reduces severity score to 30%. '
+                'Nearest neighbours: TF-IDF cosine similarity against 99 labelled training examples.'
+            ),
+        },
+        'how_to_read': (
+            'severity_distribution shows model probability across all 5 severity tiers. '
+            'top_predicted_organs are the organ systems the classifier assigned highest probability. '
+            'nearest_training_refs are the most semantically similar labelled examples '
+            'from the training corpus — they explain what the model compared this text against. '
+            'low_confidence_warnings flag predictions where model certainty < 45%.'
+        ),
     }
 
 

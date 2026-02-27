@@ -309,6 +309,7 @@ def analyze_interactions_with_context(
     brand_names:  List[str],
     patient_data: Optional[Dict] = None,
     save_report:  Optional[str]  = None,
+    explain:      bool           = True,
 ) -> Dict:
     """
     Run the complete PolyGuard pipeline for a list of brand medications.
@@ -321,10 +322,19 @@ def analyze_interactions_with_context(
                          conditions (list[str])  e.g. ['Hypertension', 'Diabetes Type 2']
                          lab_values (dict)       e.g. {'eGFR': 45, 'ALT': 52, 'platelets': 180}
         save_report  : optional filepath to write the JSON report
+        explain      : if True (default), generate and print XAI explanations
+
+    XAI is used at five points in this pipeline:
+      Step 3 — feature attribution: which words drove each severity score
+      Step 4 — organ attribution: which words triggered each organ flag
+      Step 5 — waterfall: exactly how base score became adjusted score
+      Step 6 — cascade attribution: which drug pairs compound on each organ
+      Step 7 — counterfactuals: which lab/condition changes would lower risk most
 
     Returns:
-        Full analysis dict including clinical_report
+        Full analysis dict including clinical_report and xai_report
     """
+    from xai_explainer import generate_xai_report, print_xai_report
 
     # ── Steps 1 & 2 ──────────────────────────────────────────────────────────
     interaction_data = get_interactions_for_multiple_brands(brand_names)
@@ -341,12 +351,16 @@ def analyze_interactions_with_context(
     num_drugs         = len(interaction_data['all_ingredients'])
 
     # ── Step 3 ───────────────────────────────────────────────────────────────
+    # NLP severity scoring (TF-IDF + LR classifier)
+    # XAI will explain which n-grams drove each score
     print("\n[Step 3] Scoring interaction severity…")
     base_scores = calculate_interaction_score_robust(interactions_list)
     print(f"         Total score: {base_scores['total_score']} | "
           f"Risk: {base_scores['risk_level']} {base_scores['risk_color']}")
 
     # ── Step 4 ───────────────────────────────────────────────────────────────
+    # NLP organ classification (OvR multi-label classifier)
+    # XAI will explain which words triggered each organ system
     print("\n[Step 4] Mapping risk to organ systems…")
     organ_analysis = analyze_biological_impact(interactions_list, base_scores)
     print(f"         {organ_analysis['num_organs_affected']} organ system(s) affected")
@@ -355,6 +369,8 @@ def analyze_interactions_with_context(
         print(f"         Highest: {top['system']} — {top['severity']} {top['icon']}")
 
     # ── Step 5 ───────────────────────────────────────────────────────────────
+    # Patient adjustment (evidence-based multipliers)
+    # XAI will generate waterfall chart showing each factor's contribution
     if patient_data:
         print("\n[Step 5] Applying patient-specific risk adjustments…")
         patient_adj = adjust_for_patient_context(
@@ -373,6 +389,8 @@ def analyze_interactions_with_context(
     adjusted_systems = patient_adj.get('adjusted_systems', [])
 
     # ── Step 6 ───────────────────────────────────────────────────────────────
+    # Polypharmacy cascade detection
+    # XAI will attribute which drug pairs contribute to each cascade
     print("\n[Step 6] Detecting polypharmacy cascades…")
     cascade_detection = detect_polypharmacy_cascades(
         adjusted_systems, interactions_list, num_drugs
@@ -390,24 +408,56 @@ def analyze_interactions_with_context(
     clinical_report = generate_clinical_report(
         base_scores, organ_analysis, patient_adj, cascade_detection, patient_data
     )
-
     _print_report(clinical_report)
 
+    # ── XAI: generate explanations for all 5 steps ───────────────────────────
+    # Called after the clinical report so it appears as a distinct section.
+    # Each explanation type maps to a specific pipeline step:
+    #   step3_interaction_explanations — WHY each interaction scored as it did
+    #   step5_waterfalls               — HOW base score became adjusted score
+    #   step5_counterfactuals          — WHAT would reduce risk (actionable)
+    #   step6_cascade_attributions     — WHICH drug pairs caused each cascade
+    xai_report = {}
+    if explain:
+        print("\n[XAI]  Generating explanations…")
+        try:
+            xai_report = generate_xai_report(
+                base_scores       = base_scores,
+                organ_analysis    = organ_analysis,
+                patient_adj       = patient_adj,
+                cascade_detection = cascade_detection,
+                interactions_list = interactions_list,
+                patient_data      = patient_data,
+            )
+            print(f"         {len(xai_report['step3_interaction_explanations'])} interaction explanation(s)")
+            if xai_report['has_patient_xai']:
+                print(f"         {len(xai_report['step5_waterfalls'])} waterfall chart(s)")
+            if xai_report['has_counterfactuals']:
+                print(f"         {len(xai_report['step5_counterfactuals'])} counterfactual(s) — "
+                      f"actionable risk-reduction recommendations")
+            if xai_report['has_cascade_xai']:
+                print(f"         {len(xai_report['step6_cascade_attributions'])} cascade attribution(s)")
+            print_xai_report(xai_report)
+        except Exception as e:
+            print(f"         ⚠️  XAI generation failed: {e}")
+
     result = {
-        'status':            'INTERACTIONS_FOUND',
-        'basic_data':        interaction_data,
-        'patient_data':      patient_data,
-        'base_scores':       base_scores,
-        'organ_analysis':    organ_analysis,
+        'status':              'INTERACTIONS_FOUND',
+        'basic_data':          interaction_data,
+        'patient_data':        patient_data,
+        'base_scores':         base_scores,
+        'organ_analysis':      organ_analysis,
         'patient_adjustments': patient_adj,
-        'cascade_detection': cascade_detection,
-        'clinical_report':   clinical_report,
+        'cascade_detection':   cascade_detection,
+        'clinical_report':     clinical_report,
+        'xai_report':          xai_report,   # Step 3+4+5+6 explanations
     }
 
     if save_report:
         try:
             with open(save_report, 'w') as f:
-                json.dump(clinical_report, f, indent=2, default=str)
+                json.dump({'clinical_report': clinical_report,
+                           'xai_report': xai_report}, f, indent=2, default=str)
             print(f"\n   💾 Report saved → {save_report}")
         except Exception as e:
             print(f"\n   ⚠️  Could not save report: {e}")
@@ -420,10 +470,11 @@ def analyze_interactions_with_context(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _print_report(report: Dict) -> None:
-    """Pretty-print the final PolyGuard clinical report."""
-    s  = report['summary']
-    ev = report['evidence_base']
-    W  = 72
+    """Pretty-print the final PolyGuard clinical report, including XAI explanations."""
+    s   = report['summary']
+    ev  = report['evidence_base']
+    xai = report.get('explainability', {})
+    W   = 72
 
     print(f"\n{'='*W}")
     print(f"  POLYGUARD CLINICAL REPORT  {s['risk_icon']}  {s['overall_risk_level']}")
@@ -435,21 +486,65 @@ def _print_report(report: Dict) -> None:
     print(f"  Organs at Risk  : {s['num_organs_affected']}")
     print(f"  Cascades        : {s['num_cascades']}")
 
-    # ── Interaction breakdown ─────────────────────────────────────────────
-    breakdown = report['interaction_analysis'].get('detailed_breakdown', [])
+    # ── Low-confidence warnings (XAI) ────────────────────────────────────────
+    mt = xai.get('model_transparency', {})
+    if mt.get('low_confidence_warnings'):
+        print(f"\n  {'─'*W}")
+        print(f"  ⚠️  MODEL CONFIDENCE WARNINGS")
+        print(f"  {'─'*W}")
+        for w in mt['low_confidence_warnings']:
+            print(f"  ⚡  {w}")
+
+    # ── Interaction breakdown with XAI ───────────────────────────────────────
+    breakdown   = report['interaction_analysis'].get('detailed_breakdown', [])
+    xai_per_ix  = {e['drugs']: e for e in xai.get('per_interaction', [])}
+
     if breakdown:
         print(f"\n  {'─'*W}")
-        print(f"  INTERACTION DETAILS")
+        print(f"  INTERACTION DETAILS  (with NLP explanation)")
         print(f"  {'─'*W}")
         for item in breakdown:
-            print(f"  {item['icon']}  {item['drugs']}  [{item['severity']}] +{item['score']}")
-            desc = item['description']
+            drugs = item['drugs']
+            print(f"  {item['icon']}  {drugs}  [{item['severity']}] +{item['score']}")
+            desc = item.get('description', '')
             if desc and desc != 'No description available':
                 print(f"       {desc[:110]}{'…' if len(desc) > 110 else ''}")
             if item.get('mechanism') and item['mechanism'] not in ('Unknown', ''):
                 print(f"       Mechanism: {item['mechanism']}")
 
-    # ── Organ system breakdown ────────────────────────────────────────────
+            # XAI block per interaction
+            xe = xai_per_ix.get(drugs)
+            if xe:
+                conf = xe['model_confidence']
+                conf_bar = '█' * int(conf * 10) + '░' * (10 - int(conf * 10))
+                print(f"       NLP confidence : {conf:.0%}  [{conf_bar}]")
+
+                # Severity probability distribution
+                sev_dist = xe['severity_distribution']
+                dist_str = '  '.join(
+                    f"{k[0]}:{v:.0%}" for k, v in sev_dist.items() if v > 0.02
+                )
+                print(f"       Severity proba : {dist_str}")
+
+                # Top organ predictions
+                if xe['top_predicted_organs']:
+                    org_str = '  '.join(
+                        f"{o.replace('_',' ').title()}({p:.0%})"
+                        for o, p in xe['top_predicted_organs'][:3]
+                    )
+                    print(f"       Predicted organs: {org_str}")
+
+                # Nearest training references
+                if xe['nearest_training_refs']:
+                    print(f"       Nearest known cases:")
+                    for ref in xe['nearest_training_refs'][:2]:
+                        print(f"         ↳ {ref[:100]}")
+
+                # Negation note
+                if xe.get('negation_note'):
+                    print(f"       🔵 {xe['negation_note']}")
+
+    # ── Organ system breakdown with NLP confidence ───────────────────────────
     systems = (
         report['patient_specific_analysis'].get('adjusted_systems') or
         report['organ_system_analysis'].get('affected_organ_systems', [])
@@ -463,13 +558,15 @@ def _print_report(report: Dict) -> None:
             base   = sys.get('base_score', score)
             mult   = sys.get('vulnerability_multiplier', 1.0)
             bar    = '█' * min(int(score / 4), 20)
-            print(f"  {sys['icon']}  {sys['system']:<28} {score:>4}  {bar}")
+            nlp_c  = sys.get('nlp_confidence', None)
+            conf_tag = f"  NLP conf={nlp_c:.0%}" if nlp_c is not None else ''
+            print(f"  {sys['icon']}  {sys['system']:<28} {score:>4}  {bar}{conf_tag}")
             if mult != 1.0:
                 print(f"       base {base} × {mult:.2f}x  [{sys['severity']}]")
             for rf in sys.get('risk_factors', []):
                 print(f"       ↳ {rf}")
 
-    # ── Cascade alerts ────────────────────────────────────────────────────
+    # ── Cascade alerts ────────────────────────────────────────────────────────
     cascades = report['polypharmacy_cascade_analysis'].get('cascades', [])
     if cascades:
         print(f"\n  {'─'*W}")
@@ -480,7 +577,21 @@ def _print_report(report: Dict) -> None:
             print(f"       Score {c['cumulative_score']}  across {c['num_interactions']} interactions")
             print(f"       {c['evidence_rationale'][:90]}")
 
-    # ── Evidence base ─────────────────────────────────────────────────────
+    # ── XAI model transparency summary ───────────────────────────────────────
+    if mt:
+        print(f"\n  {'─'*W}")
+        print(f"  EXPLAINABLE AI — MODEL TRANSPARENCY")
+        print(f"  {'─'*W}")
+        avg_c = mt.get('average_confidence', 0)
+        print(f"  Average model confidence : {avg_c:.0%}")
+        print(f"  Negated interactions     : {mt.get('negated_interactions', 0)}")
+        top_sig = mt.get('top_signal_organs', [])
+        if top_sig:
+            sig_str = '  '.join(f"{o.replace('_',' ').title()}({p:.2f})" for o, p in top_sig[:4])
+            print(f"  Strongest organ signals  : {sig_str}")
+        print(f"  Method: {mt.get('nlp_methodology','')[:100]}…")
+
+    # ── Evidence base ─────────────────────────────────────────────────────────
     print(f"\n  {'─'*W}")
     print(f"  EVIDENCE BASE")
     print(f"  {'─'*W}")

@@ -871,7 +871,7 @@ class TestStep7ReportGeneration(unittest.TestCase):
         report = self._full_pipeline()
         for section in ('summary','interaction_analysis','organ_system_analysis',
                         'patient_specific_analysis','polypharmacy_cascade_analysis',
-                        'evidence_base','report_metadata'):
+                        'evidence_base','report_metadata','explainability'):
             self.assertIn(section, report)
 
     def test_patient_data_included_when_provided(self):
@@ -887,6 +887,124 @@ class TestStep7ReportGeneration(unittest.TestCase):
     def test_all_citations_is_list(self):
         report = self._full_pipeline()
         self.assertIsInstance(report['evidence_base']['all_citations'], list)
+
+    # ── XAI tests ────────────────────────────────────────────────────────────
+
+    def test_xai_section_has_required_keys(self):
+        """XAI section must have per_interaction list and model_transparency."""
+        report = self._full_pipeline(INTERACTIONS_ALL_ORGANS[:4])
+        xai = report['explainability']
+        for key in ('per_interaction', 'model_transparency', 'how_to_read'):
+            self.assertIn(key, xai, f"Missing key '{key}' in explainability section")
+
+    def test_xai_per_interaction_count_matches_interactions(self):
+        """XAI must produce one entry per interaction analysed."""
+        ix     = INTERACTIONS_ALL_ORGANS[:3]
+        report = self._full_pipeline(ix)
+        xai    = report['explainability']
+        self.assertEqual(
+            len(xai['per_interaction']), len(ix),
+            "Number of XAI entries must equal number of interactions"
+        )
+
+    def test_xai_per_interaction_has_required_fields(self):
+        """Each XAI interaction entry must contain all required fields."""
+        report = self._full_pipeline(INTERACTIONS_ALL_ORGANS[:2])
+        for entry in report['explainability']['per_interaction']:
+            for field in ('drugs','predicted','score','model_confidence',
+                          'severity_distribution','top_predicted_organs',
+                          'nearest_training_refs','negation_detected'):
+                self.assertIn(field, entry,
+                    f"Missing field '{field}' in XAI per_interaction entry")
+
+    def test_xai_model_confidence_is_valid_float(self):
+        """model_confidence must be a float between 0 and 1."""
+        report = self._full_pipeline(INTERACTIONS_ALL_ORGANS[:3])
+        for entry in report['explainability']['per_interaction']:
+            c = entry['model_confidence']
+            self.assertIsInstance(c, float)
+            self.assertGreaterEqual(c, 0.0)
+            self.assertLessEqual(c, 1.0)
+
+    def test_xai_severity_distribution_sums_to_approx_one(self):
+        """Severity probability distribution must sum to ~1.0."""
+        report = self._full_pipeline(INTERACTIONS_ALL_ORGANS[:2])
+        for entry in report['explainability']['per_interaction']:
+            total = sum(entry['severity_distribution'].values())
+            self.assertAlmostEqual(total, 1.0, places=1,
+                msg=f"Severity proba for {entry['drugs']} sums to {total}, expected ~1.0")
+
+    def test_xai_nearest_refs_are_non_empty(self):
+        """Nearest training references must be returned for every interaction."""
+        report = self._full_pipeline([IX_HEPATIC, IX_RENAL])
+        for entry in report['explainability']['per_interaction']:
+            self.assertGreater(
+                len(entry['nearest_training_refs']), 0,
+                f"No nearest refs for {entry['drugs']}"
+            )
+
+    def test_xai_top_predicted_organs_list(self):
+        """top_predicted_organs must be a non-empty list of (organ, prob) tuples."""
+        report = self._full_pipeline([IX_CARDIOVASCULAR, IX_HEPATIC])
+        for entry in report['explainability']['per_interaction']:
+            ops = entry['top_predicted_organs']
+            self.assertIsInstance(ops, list)
+            self.assertGreater(len(ops), 0)
+            for o, p in ops:
+                self.assertIsInstance(o, str)
+                self.assertGreaterEqual(p, 0.0)
+                self.assertLessEqual(p, 1.0)
+
+    def test_xai_negation_detected_for_negated_text(self):
+        """Negation must be flagged and score reduced for negated descriptions."""
+        negated_ix = [{'drug_a':'A','drug_b':'B',
+                       'description':'No significant interaction. Unlikely to cause harm.'}]
+        affirmative_ix = [{'drug_a':'A','drug_b':'B',
+                           'description':'Severe bleeding and haemorrhage significantly increased.'}]
+        neg_report = self._full_pipeline(negated_ix)
+        aff_report = self._full_pipeline(affirmative_ix)
+
+        neg_entry = neg_report['explainability']['per_interaction'][0]
+        aff_entry = aff_report['explainability']['per_interaction'][0]
+
+        self.assertTrue(neg_entry['negation_detected'],
+            "Negation should be flagged for negated text")
+        self.assertFalse(aff_entry['negation_detected'],
+            "Negation should NOT be flagged for affirmative text")
+        self.assertLess(neg_entry['score'], aff_entry['score'],
+            "Negated interaction must score lower than affirmative")
+        self.assertIsNotNone(neg_entry['negation_note'],
+            "Negated interaction must have a negation_note explanation")
+
+    def test_xai_model_transparency_has_required_keys(self):
+        """model_transparency block must contain all required fields."""
+        report = self._full_pipeline(INTERACTIONS_ALL_ORGANS[:4])
+        mt = report['explainability']['model_transparency']
+        for key in ('average_confidence','low_confidence_warnings',
+                    'top_signal_organs','negated_interactions','nlp_methodology'):
+            self.assertIn(key, mt)
+
+    def test_xai_average_confidence_is_reasonable(self):
+        """Average model confidence must be between 0 and 1."""
+        report = self._full_pipeline(INTERACTIONS_ALL_ORGANS[:5])
+        avg_c  = report['explainability']['model_transparency']['average_confidence']
+        self.assertGreater(avg_c, 0.0)
+        self.assertLessEqual(avg_c, 1.0)
+
+    def test_xai_top_signal_organs_for_hepatic_interaction(self):
+        """For an explicitly hepatic interaction, HEPATIC must appear in top signal organs."""
+        report = self._full_pipeline([IX_HEPATIC])
+        top_orgs = [o for o, _ in
+                    report['explainability']['model_transparency']['top_signal_organs']]
+        self.assertIn('HEPATIC', top_orgs,
+            f"HEPATIC should be top signal organ for hepatic interaction. Got: {top_orgs}")
+
+    def test_xai_report_version_reflects_nlp(self):
+        """report_metadata version string must reference NLP."""
+        report = self._full_pipeline()
+        version = report['report_metadata']['analysis_version']
+        self.assertIn('NLP', version,
+            f"Version string should mention NLP. Got: '{version}'")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1064,7 +1182,9 @@ class TestMainFunctions(unittest.TestCase):
                 self.assertTrue(os.path.exists(path))
                 with open(path) as f:
                     data = json.load(f)
-                self.assertIn('summary', data)
+                # The saved JSON is the clinical_report dict
+                report = data.get('clinical_report', data)
+                self.assertIn('summary', report)
         finally:
             if os.path.exists(path):
                 os.unlink(path)
@@ -1075,12 +1195,14 @@ class TestMainFunctions(unittest.TestCase):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestEndToEnd(unittest.TestCase):
-    """Full pipeline integration tests."""
+    """Full pipeline integration tests including XAI."""
 
     def setUp(self):
         m.pharma_db          = MOCK_PHARMA.copy()
         m.interactions_table = MOCK_DDI.copy()
         m.ingredient_id_map  = {}
+
+    # ── Core pipeline tests (explain=False for speed) ─────────────────────────
 
     def test_full_pipeline_no_crash(self):
         """Full pipeline must complete without raising exceptions."""
@@ -1089,6 +1211,7 @@ class TestEndToEnd(unittest.TestCase):
                 ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule',
                  'Simvastatin 20mg Tablet'],
                 patient_data=PATIENT_COMPLEX,
+                explain=False,
             )
         except Exception as e:
             self.fail(f"Pipeline raised an exception: {e}")
@@ -1098,100 +1221,217 @@ class TestEndToEnd(unittest.TestCase):
         try:
             m.analyze_interactions_with_context(
                 ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'],
+                explain=False,
             )
         except Exception as e:
             self.fail(f"Pipeline raised: {e}")
 
     def test_multi_organ_pipeline_produces_multiple_organ_systems(self):
-        """Morphine + Diazepam + Isoniazid + Rifampicin should hit ≥2 organ systems."""
+        """Multi-drug combination should produce >= 2 organ systems."""
         result = m.analyze_interactions_with_context(
             ['Morphine Sulfate Tablet', 'Diazepam 5mg Tablet',
              'Isoniazid 300mg Tablet',  'Rifampicin 450mg Capsule'],
             patient_data=PATIENT_COMPLEX,
+            explain=False,
         )
         if result['status'] == 'INTERACTIONS_FOUND':
-            systems = (
-                result['patient_adjustments'].get('adjusted_systems') or
-                result['organ_analysis'].get('affected_organ_systems', [])
-            )
-            n = len(systems)
-            self.assertGreaterEqual(n, 2,
-                f"Expected ≥2 organ systems from multi-drug pipeline, got {n}: "
-                f"{[s['system'] for s in systems]}")
+            systems = (result['patient_adjustments'].get('adjusted_systems') or
+                       result['organ_analysis'].get('affected_organ_systems', []))
+            self.assertGreaterEqual(len(systems), 2,
+                f"Got: {[s['system'] for s in systems]}")
 
-    def test_complex_patient_organ_scores_higher_than_young_healthy(self):
-        """Complex patient total organ-adjusted score > young healthy for same drugs."""
-        brands = ['Morphine Sulfate Tablet', 'Diazepam 5mg Tablet']
-        r_complex = m.analyze_interactions_with_context(brands, patient_data=PATIENT_COMPLEX)
-        r_young   = m.analyze_interactions_with_context(brands, patient_data=PATIENT_YOUNG_HEALTHY)
+    def test_complex_patient_scores_higher_than_young_healthy(self):
+        """Complex patient adjusted scores > young healthy for same drugs."""
+        brands    = ['Morphine Sulfate Tablet', 'Diazepam 5mg Tablet']
+        r_complex = m.analyze_interactions_with_context(brands, patient_data=PATIENT_COMPLEX,      explain=False)
+        r_young   = m.analyze_interactions_with_context(brands, patient_data=PATIENT_YOUNG_HEALTHY, explain=False)
         if r_complex['status'] == r_young['status'] == 'INTERACTIONS_FOUND':
-            complex_total = sum(
-                s.get('adjusted_score', s.get('score', 0))
-                for s in r_complex['patient_adjustments'].get('adjusted_systems', [])
-            )
-            young_total = sum(
-                s.get('adjusted_score', s.get('score', 0))
-                for s in r_young['patient_adjustments'].get('adjusted_systems', [])
-            )
-            self.assertGreater(complex_total, young_total,
-                f"Complex ({complex_total}) should exceed young healthy ({young_total})")
+            ct = sum(s.get('adjusted_score', s.get('score', 0)) for s in r_complex['patient_adjustments'].get('adjusted_systems', []))
+            yt = sum(s.get('adjusted_score', s.get('score', 0)) for s in r_young['patient_adjustments'].get('adjusted_systems', []))
+            self.assertGreater(ct, yt)
 
-    def test_respiratory_organ_appears_for_morphine_diazepam(self):
-        """Morphine + Diazepam interaction (respiratory depression) should produce Respiratory organ."""
+    def test_respiratory_organ_for_morphine_diazepam(self):
         result = m.analyze_interactions_with_context(
-            ['Morphine Sulfate Tablet', 'Diazepam 5mg Tablet'],
-        )
+            ['Morphine Sulfate Tablet', 'Diazepam 5mg Tablet'], explain=False)
         if result['status'] == 'INTERACTIONS_FOUND':
-            systems = result['organ_analysis'].get('affected_organ_systems', [])
-            names   = [s['system'] for s in systems]
-            self.assertIn('Respiratory', names,
-                f"Expected Respiratory in organ systems, got: {names}")
+            names = [s['system'] for s in result['organ_analysis'].get('affected_organ_systems', [])]
+            self.assertIn('Respiratory', names, f"Got: {names}")
 
-    def test_hepatic_organ_appears_for_isoniazid_rifampicin(self):
-        """Isoniazid + Rifampicin (hepatotoxicity) should produce Hepatic organ system."""
+    def test_hepatic_organ_for_isoniazid_rifampicin(self):
         result = m.analyze_interactions_with_context(
-            ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'],
-        )
+            ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'], explain=False)
         if result['status'] == 'INTERACTIONS_FOUND':
-            systems = result['organ_analysis'].get('affected_organ_systems', [])
-            names   = [s['system'] for s in systems]
-            self.assertIn('Hepatic', names,
-                f"Expected Hepatic in organ systems, got: {names}")
+            names = [s['system'] for s in result['organ_analysis'].get('affected_organ_systems', [])]
+            self.assertIn('Hepatic', names, f"Got: {names}")
 
     def test_single_brand_no_pairs(self):
-        """Single brand → no pairs → NO_INTERACTIONS status."""
-        result = m.analyze_interactions_with_context(['Calpol 500mg Tablet'])
+        result = m.analyze_interactions_with_context(['Calpol 500mg Tablet'], explain=False)
         self.assertEqual(result['status'], 'NO_INTERACTIONS')
 
-    def test_report_risk_levels_are_valid_values(self):
-        """Risk level must be one of the five defined tiers."""
+    def test_report_risk_levels_valid(self):
         valid  = {'CRITICAL','SEVERE','MODERATE','MILD','MINIMAL'}
         result = m.analyze_interactions_with_context(
             ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'],
-            patient_data=PATIENT_COMPLEX,
-        )
+            patient_data=PATIENT_COMPLEX, explain=False)
         if result['status'] == 'INTERACTIONS_FOUND':
-            level = result['clinical_report']['summary']['overall_risk_level']
-            self.assertIn(level, valid)
+            self.assertIn(result['clinical_report']['summary']['overall_risk_level'], valid)
 
-    def test_save_report_creates_file(self):
-        """save_report parameter should write a valid JSON file."""
+    def test_result_has_xai_report_key(self):
+        """Result always has xai_report key."""
+        result = m.analyze_interactions_with_context(
+            ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'], explain=False)
+        if result['status'] == 'INTERACTIONS_FOUND':
+            self.assertIn('xai_report', result)
+
+    def test_save_report_includes_xai(self):
+        """Saved JSON file must contain both clinical_report and xai_report."""
         import tempfile, os, json
         with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as tf:
             path = tf.name
         try:
             result = m.analyze_interactions_with_context(
                 ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'],
-                save_report=path,
-            )
+                save_report=path, explain=False)
             if result['status'] == 'INTERACTIONS_FOUND':
                 self.assertTrue(os.path.exists(path))
                 with open(path) as f:
                     data = json.load(f)
-                self.assertIn('summary', data)
+                # File now wraps both clinical_report and xai_report
+                self.assertIn('clinical_report', data)
+                self.assertIn('xai_report',      data)
+                self.assertIn('summary',         data['clinical_report'])
         finally:
             if os.path.exists(path):
                 os.unlink(path)
+
+    # ── XAI-specific tests (explain=True) ─────────────────────────────────────
+
+    def test_xai_step3_explanations_present(self):
+        """With explain=True, xai_report must have step3 explanations."""
+        result = m.analyze_interactions_with_context(
+            ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'], explain=True)
+        if result['status'] == 'INTERACTIONS_FOUND':
+            xai = result['xai_report']
+            exps = xai.get('step3_interaction_explanations', [])
+            self.assertGreater(len(exps), 0)
+            # Each explanation must have the key XAI fields
+            for ex in exps:
+                self.assertIn('severity_xai',  ex)
+                self.assertIn('organ_xais',    ex)
+                self.assertIn('severity_bars', ex)
+                self.assertIn('organ_bars',    ex)
+
+    def test_xai_severity_attribution_has_supporting_features(self):
+        """Severity XAI must identify the top n-grams that drove the prediction."""
+        result = m.analyze_interactions_with_context(
+            ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'], explain=True)
+        if result['status'] == 'INTERACTIONS_FOUND':
+            xai  = result['xai_report']
+            exps = xai['step3_interaction_explanations']
+            sev_xai = exps[0]['severity_xai']
+            # Must have a predicted class, confidence, and supporting features
+            self.assertIn('predicted_class', sev_xai)
+            self.assertIn('confidence',      sev_xai)
+            self.assertIn('supporting',      sev_xai)
+            self.assertIsInstance(sev_xai['supporting'], list)
+
+    def test_xai_organ_attribution_has_features(self):
+        """Organ XAI must identify features that triggered the organ classification."""
+        result = m.analyze_interactions_with_context(
+            ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'], explain=True)
+        if result['status'] == 'INTERACTIONS_FOUND':
+            xai      = result['xai_report']
+            organ_xs = xai['step3_interaction_explanations'][0]['organ_xais']
+            self.assertGreater(len(organ_xs), 0)
+            for oxai in organ_xs:
+                self.assertIn('organ',        oxai)
+                self.assertIn('probability',  oxai)
+                self.assertIn('top_features', oxai)
+                self.assertIn('explanation',  oxai)
+
+    def test_xai_waterfall_generated_for_complex_patient(self):
+        """Waterfall charts must be generated when patient adjustments occur."""
+        result = m.analyze_interactions_with_context(
+            ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'],
+            patient_data=PATIENT_COMPLEX, explain=True)
+        if result['status'] == 'INTERACTIONS_FOUND':
+            xai = result['xai_report']
+            self.assertTrue(xai.get('has_patient_xai', False),
+                "Expected waterfall charts for complex patient")
+            for wf in xai['step5_waterfalls']:
+                self.assertIn('organ',       wf)
+                self.assertIn('base_score',  wf)
+                self.assertIn('final_score', wf)
+                self.assertIn('steps',       wf)
+                self.assertIn('bar_chart',   wf)
+                self.assertGreater(wf['total_delta'], 0,
+                    f"{wf['organ']}: waterfall delta should be > 0 for complex patient")
+
+    def test_xai_waterfall_steps_add_up(self):
+        """Waterfall final running value must equal final_score."""
+        result = m.analyze_interactions_with_context(
+            ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'],
+            patient_data=PATIENT_COMPLEX, explain=True)
+        if result['status'] == 'INTERACTIONS_FOUND':
+            xai = result['xai_report']
+            for wf in xai['step5_waterfalls']:
+                last_step = wf['steps'][-1]
+                self.assertEqual(
+                    last_step['running'], wf['final_score'],
+                    f"{wf['organ']}: waterfall last step {last_step['running']} "
+                    f"!= final_score {wf['final_score']}"
+                )
+
+    def test_xai_counterfactuals_generated_for_abnormal_labs(self):
+        """Counterfactuals must be generated when patient has abnormal labs."""
+        result = m.analyze_interactions_with_context(
+            ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'],
+            patient_data=PATIENT_COMPLEX,  # eGFR=42, ALT=85, INR=3.2
+            explain=True)
+        if result['status'] == 'INTERACTIONS_FOUND':
+            xai = result['xai_report']
+            self.assertTrue(xai.get('has_counterfactuals', False),
+                "Expected counterfactuals for patient with abnormal labs")
+            for cf in xai['step5_counterfactuals']:
+                self.assertIn('organ',           cf)
+                self.assertIn('current_score',   cf)
+                self.assertIn('counterfactuals', cf)
+                self.assertIn('top_action',      cf)
+                # Each counterfactual must state a score saving
+                for item in cf['counterfactuals']:
+                    self.assertGreater(item['score_saving'], 0)
+                    self.assertIn('narrative', item)
+
+    def test_xai_counterfactuals_are_actionable(self):
+        """Each counterfactual narrative must reference a specific lab or condition."""
+        result = m.analyze_interactions_with_context(
+            ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'],
+            patient_data=PATIENT_COMPLEX, explain=True)
+        if result['status'] == 'INTERACTIONS_FOUND':
+            xai = result['xai_report']
+            for cf in xai['step5_counterfactuals']:
+                for item in cf['counterfactuals'][:3]:
+                    narrative = item['narrative'].lower()
+                    # Must reference either a lab name or a condition
+                    lab_cond_terms = [
+                        'egfr', 'alt', 'ast', 'inr', 'platelet', 'glucose',
+                        'hypertension', 'diabetes', 'atrial', 'copd',
+                    ]
+                    self.assertTrue(
+                        any(t in narrative for t in lab_cond_terms),
+                        f"Counterfactual narrative not actionable: '{item['narrative']}'"
+                    )
+
+    def test_xai_no_patient_data_no_waterfalls(self):
+        """Without patient data there should be no waterfall charts."""
+        result = m.analyze_interactions_with_context(
+            ['Isoniazid 300mg Tablet', 'Rifampicin 450mg Capsule'],
+            explain=True)
+        if result['status'] == 'INTERACTIONS_FOUND':
+            xai = result['xai_report']
+            self.assertFalse(xai.get('has_patient_xai', False),
+                "Should not have waterfall charts without patient data")
+            self.assertEqual(len(xai['step5_waterfalls']), 0)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
