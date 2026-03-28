@@ -1,3 +1,4 @@
+*.csv filter=lfs diff=lfs merge=lfs -text
 datasets/drugbank_interactions.csv filter=lfs diff=lfs merge=lfs -text
 datasets/ddi_complete.csv filter=lfs diff=lfs merge=lfs -text
 datasets/ddi_labeled.csv filter=lfs diff=lfs merge=lfs -text
