@@ -29,15 +29,11 @@ from polyguard_engine_evidence_based import (
 
 print("Loading datasets…")
 
-pharma_db: pd.DataFrame      = load_data('./datasets/indian_pharmaceutical_products_clean.csv')
-drugbank_raw: pd.DataFrame   = load_data('./datasets/drugbank_interactions.csv')
-ddi_labeled: pd.DataFrame    = load_data('./datasets/ddi_labeled.csv')
-ddi_complete: pd.DataFrame   = load_data('./datasets/ddi_complete.csv')
-drugbank_drugs: pd.DataFrame = load_data('./datasets/drugbank_drugs.csv')
+pharma_db: pd.DataFrame = load_data('./datasets/indian_pharmaceutical_products_clean.csv')
+if not pharma_db.empty: pharma_db.columns = [c.strip().lower() for c in pharma_db.columns]
 
-# ── Normalise column names to lowercase ──────────────────────────────────────
-for _df in [pharma_db, drugbank_raw, ddi_labeled, ddi_complete, drugbank_drugs]:
-    _df.columns = [c.strip().lower() for c in _df.columns]
+drugbank_drugs: pd.DataFrame = load_data('./datasets/drugbank_drugs.csv')
+if not drugbank_drugs.empty: drugbank_drugs.columns = [c.strip().lower() for c in drugbank_drugs.columns]
 
 # ── Build merged interactions table (ddi_complete preferred; fallback raw) ───
 def _build_interactions_table() -> pd.DataFrame:
@@ -45,38 +41,56 @@ def _build_interactions_table() -> pd.DataFrame:
     Merge all interaction sources into one canonical DataFrame with columns:
         drug1_name, drug2_name, description, severity, mechanism
     """
+    import gc
     frames = []
 
     # 1. ddi_complete — richest source (has severity + mechanism)
-    if not ddi_complete.empty and 'drug1_name' in ddi_complete.columns:
-        df = ddi_complete[['drug1_name','drug2_name','description',
-                            'severity','mechanism']].copy()
-        df['source'] = 'ddi_complete'
-        frames.append(df)
+    ddi_complete = load_data('./datasets/ddi_complete.csv')
+    if not ddi_complete.empty:
+        ddi_complete.columns = [c.strip().lower() for c in ddi_complete.columns]
+        if 'drug1_name' in ddi_complete.columns:
+            df = ddi_complete[['drug1_name','drug2_name','description',
+                                'severity','mechanism']].copy()
+            df['source'] = 'ddi_complete'
+            frames.append(df)
+    del ddi_complete
+    gc.collect()
 
     # 2. ddi_labeled — also has severity
-    if not ddi_labeled.empty and 'drug1_name' in ddi_labeled.columns:
-        cols = ['drug1_name','drug2_name','description','severity']
-        df   = ddi_labeled[[c for c in cols if c in ddi_labeled.columns]].copy()
-        df['mechanism'] = ddi_labeled.get('mechanism', 'Unknown')
-        df['source']    = 'ddi_labeled'
-        frames.append(df)
+    ddi_labeled = load_data('./datasets/ddi_labeled.csv')
+    if not ddi_labeled.empty:
+        ddi_labeled.columns = [c.strip().lower() for c in ddi_labeled.columns]
+        if 'drug1_name' in ddi_labeled.columns:
+            cols = ['drug1_name','drug2_name','description','severity']
+            df = ddi_labeled[[c for c in cols if c in ddi_labeled.columns]].copy()
+            df['mechanism'] = ddi_labeled.get('mechanism', 'Unknown')
+            df['source'] = 'ddi_labeled'
+            frames.append(df)
+    del ddi_labeled
+    gc.collect()
 
     # 3. drugbank_interactions — raw descriptions, no severity label
-    if not drugbank_raw.empty and 'drug1_name' in drugbank_raw.columns:
-        df = drugbank_raw[['drug1_name','drug2_name','description']].copy()
-        df['severity']  = 'Unknown'
-        df['mechanism'] = 'Unknown'
-        df['source']    = 'drugbank_raw'
-        frames.append(df)
+    drugbank_raw = load_data('./datasets/drugbank_interactions.csv')
+    if not drugbank_raw.empty:
+        drugbank_raw.columns = [c.strip().lower() for c in drugbank_raw.columns]
+        if 'drug1_name' in drugbank_raw.columns:
+            df = drugbank_raw[['drug1_name','drug2_name','description']].copy()
+            df['severity'] = 'Unknown'
+            df['mechanism'] = 'Unknown'
+            df['source'] = 'drugbank_raw'
+            frames.append(df)
+    del drugbank_raw
+    gc.collect()
 
     if not frames:
         print("⚠️  No interaction databases loaded.")
         return pd.DataFrame(columns=['drug1_name','drug2_name','description','severity','mechanism','source'])
 
     merged = pd.concat(frames, ignore_index=True)
+    del frames
+    gc.collect()
 
-    # Normalise drug names
+    # Normalise drug names (optimise memory by running these as fast categorical changes if possible, or string operations)
     merged['drug1_name'] = merged['drug1_name'].str.strip().str.lower()
     merged['drug2_name'] = merged['drug2_name'].str.strip().str.lower()
     merged['description'] = merged['description'].fillna('No description available')

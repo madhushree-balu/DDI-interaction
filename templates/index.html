@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PolyGuard | Drug Interaction Analysis</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Main Stylesheet -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-background">
+        <div class="glow-orb orb-1"></div>
+        <div class="glow-orb orb-2"></div>
+        <div class="glow-orb orb-3"></div>
+    </div>
+    
+    <div class="app-container">
+        <!-- Header -->
+        <header class="glass-header fade-in">
+            <div class="logo">
+                <i class="fa-solid fa-shield-halved"></i> PolyGuard
+            </div>
+            <div class="tagline">Clinical Drug Interaction Analysis Pipeline</div>
+        </header>
+
+        <main class="main-content">
+            <!-- Top Dashboard: Inputs -->
+            <div class="top-dashboard">
+                <!-- Drug Search Column -->
+                <div class="panel drug-panel card glass-card fade-in" style="animation-delay: 0.1s;">
+                    <h2><i class="fa-solid fa-pills section-icon"></i> Medications</h2>
+                    <p class="subtitle">Search and add medications to analyze.</p>
+                    
+                    <div class="search-container">
+                        <input type="text" id="drug-search" placeholder="Search brand name (e.g. Augmentin)" autocomplete="off">
+                        <i class="fa-solid fa-search search-icon"></i>
+                        <ul id="search-results" class="autocomplete-dropdown hidden"></ul>
+                    </div>
+
+                    <div id="selected-drugs-container" class="selected-drugs">
+                        <!-- Chips will be appended here -->
+                    </div>
+                </div>
+
+                <!-- Patient Context Column -->
+                <div class="panel patient-panel card glass-card fade-in" style="animation-delay: 0.2s;">
+                    <h2><i class="fa-solid fa-user-injured section-icon"></i> Patient Context <span class="badge">Optional</span></h2>
+                    
+                    <div class="patient-grid">
+                        <!-- Demographics -->
+                        <div class="patient-section">
+                            <h3><i class="fa-solid fa-id-card"></i> Demographics</h3>
+                            <div class="form-group row">
+                                <div class="col-half">
+                                    <label>Age</label>
+                                    <input type="number" id="patient-age" placeholder="72" min="0" max="150">
+                                </div>
+                                <div class="col-half">
+                                    <label>Gender</label>
+                                    <div class="select-wrapper">
+                                        <select id="patient-gender">
+                                            <option value="">Select...</option>
+                                            <option value="Male">Male</option>
+                                            <option value="Female">Female</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Weight (kg)</label>
+                                <input type="number" id="patient-weight" placeholder="e.g. 70" min="0">
+                            </div>
+                        </div>
+
+                        <!-- Comorbidities -->
+                        <div class="patient-section">
+                            <h3><i class="fa-solid fa-notes-medical"></i> Comorbidities</h3>
+                            <div class="checkbox-grid" id="patient-conditions">
+                                <label class="checkbox-label"><input type="checkbox" value="Hypertension"> Hypertension</label>
+                                <label class="checkbox-label"><input type="checkbox" value="Heart Failure"> Heart Failure</label>
+                                <label class="checkbox-label"><input type="checkbox" value="Atrial Fibrillation"> Afib</label>
+                                <label class="checkbox-label"><input type="checkbox" value="Diabetes Type 2"> Diabetes</label>
+                                <label class="checkbox-label"><input type="checkbox" value="COPD"> COPD</label>
+                                <label class="checkbox-label"><input type="checkbox" value="Asthma"> Asthma</label>
+                            </div>
+                            <div style="margin-top: 15px;">
+                                <label>Liver Disease</label>
+                                <div class="select-wrapper">
+                                    <select id="patient-cirrhosis">
+                                        <option value="">None / Normal</option>
+                                        <option value="Cirrhosis Child-Pugh A">Cirrhosis (Child-Pugh A)</option>
+                                        <option value="Cirrhosis Child-Pugh B">Cirrhosis (Child-Pugh B)</option>
+                                        <option value="Cirrhosis Child-Pugh C">Cirrhosis (Child-Pugh C)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Labs -->
+                        <div class="patient-section">
+                            <h3><i class="fa-solid fa-vial"></i> Recent Labs</h3>
+                            <div class="labs-grid">
+                                <div class="lab-input">
+                                    <label>eGFR</label>
+                                    <input type="number" id="lab-egfr" placeholder="mL/min">
+                                </div>
+                                <div class="lab-input">
+                                    <label>ALT</label>
+                                    <input type="number" id="lab-alt" placeholder="U/L">
+                                </div>
+                                <div class="lab-input">
+                                    <label>Platelets</label>
+                                    <input type="number" id="lab-platelets" placeholder="k/uL">
+                                </div>
+                                <div class="lab-input">
+                                    <label>INR</label>
+                                    <input type="number" id="lab-inr" placeholder="Ratio" step="0.1">
+                                </div>
+                                <div class="lab-input">
+                                    <label>Glucose</label>
+                                    <input type="number" id="lab-glucose" placeholder="mg/dL">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Area -->
+            <div class="action-container fade-in" style="animation-delay: 0.3s;">
+                <button id="analyze-btn" class="btn-primary btn-large glow-effect" disabled>
+                    <span class="btn-text"><i class="fa-solid fa-microscope"></i> Run Clinical Analysis</span>
+                    <span class="loader hidden"><i class="fa-solid fa-circle-notch fa-spin"></i> Analyzing Pipelines...</span>
+                </button>
+            </div>
+
+            <!-- Bottom Dashboard: Results -->
+            <div class="bottom-dashboard fade-in" style="animation-delay: 0.4s;">
+                <div id="results-placeholder" class="placeholder-state card glass-card">
+                    <div class="placeholder-content">
+                        <div class="icon-ring">
+                            <i class="fa-solid fa-chart-column placeholder-icon"></i>
+                        </div>
+                        <h3>Awaiting Analysis</h3>
+                        <p>Add at least two medications and run the analysis to view the complete clinical report, including patient-specific risk adjustments and polypharmacy cascade detection.</p>
+                    </div>
+                </div>
+
+                <div id="results-container" class="results-container hidden">
+                    <!-- Results Dashboard will be injected here via JavaScript -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/js/main.js"></script>
+</body>
+</html>

@@ -1,4 +1,10 @@
-# utils.py
+import sys
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 import pandas as pd
 
 def load_data(path: str) -> pd.DataFrame:
