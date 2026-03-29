@@ -9,7 +9,7 @@ from pathlib import Path
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 GEMINI_API_KEY = "AIzaSyDr8fDpUfMP3Tvyhd9-vQsK6YMKJyX2bY0"   # <-- Replace with your key
-pytesseract.pytesseract.tesseract_cmd = r"D:\Tesseract-OCR\tesseract.exe"  # Windows only
+pytesseract.pytesseract.tesseract_cmd = r"./Tesseract-OCR/tesseract.exe"  # Windows only
 
 
 # ─── STEP 1: PREPROCESS IMAGE ─────────────────────────────────────────────────
