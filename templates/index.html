@@ -37,10 +37,16 @@
                     <h2><i class="fa-solid fa-pills section-icon"></i> Medications</h2>
                     <p class="subtitle">Search and add medications to analyze.</p>
                     
-                    <div class="search-container">
-                        <input type="text" id="drug-search" placeholder="Search brand name (e.g. Augmentin)" autocomplete="off">
-                        <i class="fa-solid fa-search search-icon"></i>
-                        <ul id="search-results" class="autocomplete-dropdown hidden"></ul>
+                    <div style="display: flex; gap: 10px; align-items: stretch; margin-bottom: 2rem;">
+                        <div class="search-container" style="flex-grow: 1; margin-bottom: 0;">
+                            <input type="text" id="drug-search" placeholder="Search brand name (e.g. Augmentin)" autocomplete="off">
+                            <i class="fa-solid fa-search search-icon"></i>
+                            <ul id="search-results" class="autocomplete-dropdown hidden"></ul>
+                        </div>
+                        <label for="ocr-upload" class="btn-primary glow-effect" style="cursor: pointer; padding: 0 1.5rem; display: flex; align-items: center; justify-content: center; border-radius: 8px; margin: 0; transition: transform 0.2s ease;" title="Scan Medicine Picture">
+                            <i class="fa-solid fa-camera" style="font-size: 1.2rem;"></i>
+                            <input type="file" id="ocr-upload" accept="image/*" style="display: none;">
+                        </label>
                     </div>
 
                     <div id="selected-drugs-container" class="selected-drugs">

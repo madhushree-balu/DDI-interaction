@@ -22,6 +22,69 @@ document.addEventListener('DOMContentLoaded', () => {
     // Debounce timer
     let searchTimeout = null;
 
+    // OCR Upload Handler
+    const ocrUpload = document.getElementById('ocr-upload');
+    if (ocrUpload) {
+        ocrUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const originalPlaceholder = searchInput.placeholder;
+            searchInput.value = "";
+            searchInput.placeholder = "Scanning image...";
+            searchInput.disabled = true;
+
+            const formData = new FormData();
+            formData.append('image', file);
+
+            fetch('/api/ocr', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) throw new Error(data.error);
+                
+                const nameToSearch = (data.brand_name && data.brand_name !== "Not found" && data.brand_name !== "null") ? data.brand_name : 
+                                     ((data.tablet_name && data.tablet_name !== "Not found" && data.tablet_name !== "null") ? data.tablet_name : null);
+                
+                if (!nameToSearch) {
+                    throw new Error("Could not extract a valid name from the image.");
+                }
+
+                searchInput.value = nameToSearch;
+                searchInput.disabled = false;
+                searchInput.placeholder = originalPlaceholder;
+                
+                // Auto search
+                fetch(`/api/brands/search?q=${encodeURIComponent(nameToSearch)}`)
+                    .then(res => res.json())
+                    .then(searchData => {
+                        const results = searchData.results || [];
+                        if (results.length > 0) {
+                            addBrand({brand: results[0], displayTxt: results[0]});
+                            searchInput.value = '';
+                        } else {
+                            alert(`Extracted "${nameToSearch}" but couldn't find an exact match. Please edit the search query manually.`);
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Auto-search error", err);
+                    });
+            })
+            .catch(err => {
+                console.error("OCR error", err);
+                alert("Error scanning image: " + err.message);
+                searchInput.value = '';
+                searchInput.disabled = false;
+                searchInput.placeholder = originalPlaceholder;
+            })
+            .finally(() => {
+                ocrUpload.value = '';
+            });
+        });
+    }
+
     // Search input handler
     searchInput.addEventListener('input', (e) => {
         const query = e.target.value.trim();
@@ -33,10 +96,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         searchTimeout = setTimeout(() => {
-            fetch(`/api/search?q=${encodeURIComponent(query)}`)
+            fetch(`/api/brands/search?q=${encodeURIComponent(query)}`)
                 .then(res => res.json())
                 .then(data => {
-                    renderSearchResults(data);
+                    renderSearchResults(data.results || []);
                 })
                 .catch(err => console.error("Search error", err));
         }, 300);
@@ -47,13 +110,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (results.length === 0) {
             searchResults.innerHTML = '<li style="color: rgba(255,255,255,0.5); padding: 1rem; text-align: center;">No matching brands found</li>';
         } else {
-            results.forEach(item => {
-                const brand = item.brand;
-                const ings = item.ingredients && item.ingredients.length ? item.ingredients.join(', ') : 'Unknown ingredients';
-                const displayTxt = `${brand} (${ings})`;
+            results.forEach(brand => {
+                const displayTxt = brand;
                 
                 const li = document.createElement('li');
-                li.innerHTML = `<i class="fa-solid fa-capsules" style="color: var(--primary-color)"></i> <strong>${brand}</strong><br><small style="color: var(--text-secondary); margin-left:1.5rem">${ings}</small>`;
+                li.innerHTML = `<i class="fa-solid fa-capsules" style="color: var(--primary-color)"></i> <strong>${brand}</strong>`;
                 li.addEventListener('click', () => {
                     addBrand({brand, displayTxt});
                     searchInput.value = '';
@@ -155,7 +216,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsContainer.innerHTML = '';
         resultsContainer.classList.add('hidden');
 
-        fetch('/api/analyze', {
+        fetch('/api/analyse', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload)
@@ -202,53 +263,53 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        const report = data.clinical_report;
-        const summary = report.summary;
-        
-        const rColor = summary.risk_color === 'RED' ? 'risk-high' : 
-                       summary.risk_color === 'YELLOW' ? 'risk-moderate' : 
-                       summary.risk_color === 'GREEN' ? 'risk-low' : 'risk-unknown';
+        const rColor = (data.risk_color === 'RED' || data.risk_color === '🔴') ? 'risk-high' : 
+                       (data.risk_color === 'YELLOW' || data.risk_color === '🟡') ? 'risk-moderate' : 
+                       (data.risk_color === 'GREEN' || data.risk_color === '⚪') ? 'risk-low' : 'risk-unknown';
+
+        const riskIcon = ["🔴", "🟡", "⚪"].includes(data.risk_color) ? data.risk_color : '';
+        const riskLevel = data.risk_level || 'MINIMAL';
 
         let html = `
             <div class="card glass-card fade-in">
                 <div class="results-header">
                     <h1>PolyGuard Insight <span style="font-size: 1rem; color: #94a3b8; font-weight: 500;">v2.0</span></h1>
                     <div class="risk-badge ${rColor}">
-                        ${summary.risk_icon} ${summary.overall_risk_level.toUpperCase()} RISK
+                        ${riskIcon} ${riskLevel.toUpperCase()} RISK
                     </div>
                 </div>
                 
                 <div class="summary-stats">
                     <div class="stat-card">
                         <div class="stat-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                        <div class="stat-value">${summary.num_interactions}</div>
+                        <div class="stat-value">${data.num_interactions || 0}</div>
                         <div class="stat-label">Interactions</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-icon"><i class="fa-solid fa-lungs"></i></div>
-                        <div class="stat-value">${summary.num_organs_affected}</div>
+                        <div class="stat-value">${data.num_organs_affected || 0}</div>
                         <div class="stat-label">Organs at Risk</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-icon"><i class="fa-solid fa-link"></i></div>
-                        <div class="stat-value">${summary.num_cascades}</div>
+                        <div class="stat-value">${data.num_cascades || 0}</div>
                         <div class="stat-label">Cascades</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-icon"><i class="fa-solid fa-clipboard-list"></i></div>
-                        <div class="stat-value">${summary.total_interaction_score}</div>
+                        <div class="stat-value">${data.total_score || 0}</div>
                         <div class="stat-label">Total Score</div>
                     </div>
                 </div>
                 
                 <div class="alert-item" style="border-left-color: var(--primary-color); background: rgba(59, 130, 246, 0.1);">
                     <div class="alert-title"><i class="fa-solid fa-bullseye"></i> Primary Action Required</div>
-                    <div>${summary.primary_action}</div>
+                    <div>${data.primary_action || ''}</div>
                 </div>
             </div>
         `;
         
-        const cascades = report.polypharmacy_cascade_analysis?.cascades || [];
+        const cascades = data.cascades || [];
         if (cascades.length > 0) {
             html += `<h2 class="section-title fade-in" style="animation-delay: 0.1s;"><i class="fa-solid fa-link"></i> Polypharmacy Cascades</h2>`;
             cascades.forEach(c => {
@@ -258,7 +319,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="list-title"><i class="fa-solid fa-exclamation-triangle" style="color: var(--warning)"></i> ${c.organ_system} Alert</div>
                         <div class="badge">${c.alert_level}</div>
                     </div>
-                    <div style="font-size: 0.95rem; margin-bottom: 0.5rem; color: #e2e8f0;">${c.evidence_rationale}</div>
                     <div class="xai-info">
                         <span><i class="fa-solid fa-bolt"></i> Cumulative Score: ${c.cumulative_score}</span>
                         <span><i class="fa-solid fa-compress"></i> Included interactions: ${c.num_interactions}</span>
@@ -268,22 +328,23 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
-        const systems = data.patient_adjustments?.adjusted_systems || report.organ_system_analysis?.affected_organ_systems || [];
+        const systems = data.organ_systems || [];
         if (systems.length > 0) {
             html += `<h2 class="section-title fade-in" style="animation-delay: 0.2s;"><i class="fa-solid fa-lungs"></i> Organ System Vulnerability</h2>`;
             systems.forEach((sys, i) => {
-                const score = sys.adjusted_score || sys.score || 0;
+                const score = sys.score || 0;
                 const confPercent = sys.nlp_confidence ? (sys.nlp_confidence * 100).toFixed(0) + '%' : 'N/A';
+                const warningMsg = sys.risk_factors && sys.risk_factors.length ? sys.risk_factors.join(', ') : '';
                 
                 html += `
                 <div class="list-card fade-in" style="animation-delay: ${0.2 + (i*0.05)}s;">
                     <div class="list-header">
-                        <div class="list-title">${sys.icon} ${sys.system.replace('_', ' ').toUpperCase()}</div>
+                        <div class="list-title">${sys.icon || ''} ${sys.system.replace('_', ' ').toUpperCase()}</div>
                         <div class="badge">Score: ${score}</div>
                     </div>
-                    ${sys.patient_specific_warning ? `
+                    ${warningMsg ? `
                         <div style="color: #fcd34d; font-size: 0.9rem; margin-bottom: 0.5rem;">
-                            <i class="fa-solid fa-triangle-exclamation"></i> ${sys.patient_specific_warning}
+                            <i class="fa-solid fa-triangle-exclamation"></i> Risk Factors: ${warningMsg}
                         </div>
                     ` : ''}
                     <div class="xai-info">
@@ -296,14 +357,15 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        const details = report.interaction_analysis?.detailed_breakdown || [];
+        const details = data.interactions || [];
         if (details.length > 0) {
             html += `<h2 class="section-title fade-in" style="animation-delay: 0.3s;"><i class="fa-solid fa-flask"></i> Interaction Details</h2>`;
             details.forEach((d, i) => {
+                const drugTitle = `${d.drug_a} & ${d.drug_b}`;
                 html += `
                 <div class="list-card fade-in" style="animation-delay: ${0.3 + (i*0.05)}s;">
                     <div class="list-header">
-                        <div class="list-title">${d.icon} ${d.drugs}</div>
+                        <div class="list-title">${d.icon || ''} ${drugTitle}</div>
                         <div class="badge">${d.severity} (+${d.score})</div>
                     </div>
                     ${d.description && d.description !== 'No description available' ? 
