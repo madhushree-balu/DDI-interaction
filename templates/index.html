@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,19 +8,22 @@
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <!-- Font Awesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Main Stylesheet -->
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
+
 <body>
     <div class="app-background">
         <div class="glow-orb orb-1"></div>
         <div class="glow-orb orb-2"></div>
         <div class="glow-orb orb-3"></div>
     </div>
-    
+
     <div class="app-container">
         <!-- Header -->
         <header class="glass-header fade-in">
@@ -36,17 +40,18 @@
                 <div class="panel drug-panel card glass-card fade-in" style="animation-delay: 0.1s;">
                     <h2><i class="fa-solid fa-pills section-icon"></i> Medications</h2>
                     <p class="subtitle">Search and add medications to analyze.</p>
-                    
+
                     <div style="display: flex; gap: 10px; align-items: stretch; margin-bottom: 2rem;">
                         <div class="search-container" style="flex-grow: 1; margin-bottom: 0;">
-                            <input type="text" id="drug-search" placeholder="Search brand name (e.g. Augmentin)" autocomplete="off">
+                            <input type="text" id="drug-search" placeholder="Search brand name (e.g. Augmentin)"
+                                autocomplete="off">
                             <i class="fa-solid fa-search search-icon"></i>
                             <ul id="search-results" class="autocomplete-dropdown hidden"></ul>
                         </div>
-                        <label for="ocr-upload" class="btn-primary glow-effect" style="cursor: pointer; padding: 0 1.5rem; display: flex; align-items: center; justify-content: center; border-radius: 8px; margin: 0; transition: transform 0.2s ease;" title="Scan Medicine Picture">
+                        <!-- <label for="ocr-upload" class="btn-primary glow-effect" style="cursor: pointer; padding: 0 1.5rem; display: flex; align-items: center; justify-content: center; border-radius: 8px; margin: 0; transition: transform 0.2s ease;" title="Scan Medicine Picture">
                             <i class="fa-solid fa-camera" style="font-size: 1.2rem;"></i>
                             <input type="file" id="ocr-upload" accept="image/*" style="display: none;">
-                        </label>
+                        </label> -->
                     </div>
 
                     <div id="selected-drugs-container" class="selected-drugs">
@@ -56,8 +61,9 @@
 
                 <!-- Patient Context Column -->
                 <div class="panel patient-panel card glass-card fade-in" style="animation-delay: 0.2s;">
-                    <h2><i class="fa-solid fa-user-injured section-icon"></i> Patient Context <span class="badge">Optional</span></h2>
-                    
+                    <h2><i class="fa-solid fa-user-injured section-icon"></i> Patient Context <span
+                            class="badge">Optional</span></h2>
+
                     <div class="patient-grid">
                         <!-- Demographics -->
                         <div class="patient-section">
@@ -88,10 +94,14 @@
                         <div class="patient-section">
                             <h3><i class="fa-solid fa-notes-medical"></i> Comorbidities</h3>
                             <div class="checkbox-grid" id="patient-conditions">
-                                <label class="checkbox-label"><input type="checkbox" value="Hypertension"> Hypertension</label>
-                                <label class="checkbox-label"><input type="checkbox" value="Heart Failure"> Heart Failure</label>
-                                <label class="checkbox-label"><input type="checkbox" value="Atrial Fibrillation"> Afib</label>
-                                <label class="checkbox-label"><input type="checkbox" value="Diabetes Type 2"> Diabetes</label>
+                                <label class="checkbox-label"><input type="checkbox" value="Hypertension">
+                                    Hypertension</label>
+                                <label class="checkbox-label"><input type="checkbox" value="Heart Failure"> Heart
+                                    Failure</label>
+                                <label class="checkbox-label"><input type="checkbox" value="Atrial Fibrillation">
+                                    Afib</label>
+                                <label class="checkbox-label"><input type="checkbox" value="Diabetes Type 2">
+                                    Diabetes</label>
                                 <label class="checkbox-label"><input type="checkbox" value="COPD"> COPD</label>
                                 <label class="checkbox-label"><input type="checkbox" value="Asthma"> Asthma</label>
                             </div>
@@ -142,7 +152,8 @@
             <div class="action-container fade-in" style="animation-delay: 0.3s;">
                 <button id="analyze-btn" class="btn-primary btn-large glow-effect" disabled>
                     <span class="btn-text"><i class="fa-solid fa-microscope"></i> Run Clinical Analysis</span>
-                    <span class="loader hidden"><i class="fa-solid fa-circle-notch fa-spin"></i> Analyzing Pipelines...</span>
+                    <span class="loader hidden"><i class="fa-solid fa-circle-notch fa-spin"></i> Analyzing
+                        Pipelines...</span>
                 </button>
             </div>
 
@@ -154,7 +165,8 @@
                             <i class="fa-solid fa-chart-column placeholder-icon"></i>
                         </div>
                         <h3>Awaiting Analysis</h3>
-                        <p>Add at least two medications and run the analysis to view the complete clinical report, including patient-specific risk adjustments and polypharmacy cascade detection.</p>
+                        <p>Add at least two medications and run the analysis to view the complete clinical report,
+                            including patient-specific risk adjustments and polypharmacy cascade detection.</p>
                     </div>
                 </div>
 
@@ -168,4 +180,5 @@
     <!-- Scripts -->
     <script src="/static/js/main.js"></script>
 </body>
+
 </html>
