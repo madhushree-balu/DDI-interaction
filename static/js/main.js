@@ -377,6 +377,67 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
+        const xai = data.xai;
+        if (xai && xai.step3_interaction_explanations && xai.step3_interaction_explanations.length > 0) {
+            html += `<h2 class="section-title fade-in" style="animation-delay: 0.4s;"><i class="fa-solid fa-microchip"></i> Explainable AI (XAI) Insight</h2>`;
+            
+            html += `
+            <div class="list-card fade-in" style="animation-delay: 0.45s; border-left: 4px solid #8b5cf6; background: rgba(139, 92, 246, 0.05);">
+                <div class="list-header">
+                    <div class="list-title"><i class="fa-solid fa-brain" style="color: #8b5cf6"></i> Model Transparency Overview</div>
+                    <div class="badge" style="background: rgba(139, 92, 246, 0.2); color: #c4b5fd;">XAI Active</div>
+                </div>
+                <div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.5rem; line-height: 1.4;">${xai.methodology || 'Transparency pipeline active.'}</div>
+            </div>`;
+            
+            xai.step3_interaction_explanations.forEach((ix, i) => {
+                let refsHtml = '';
+                if (ix.nearest_refs && ix.nearest_refs.length > 0) {
+                    refsHtml = `<div style="margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.8rem;">
+                        <div style="color: #cbd5e1; font-size: 0.8rem; margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.5px;"><i class="fa-solid fa-database"></i> Training References</div>
+                        <ul style="margin: 0; font-size: 0.8rem; color: #94a3b8; padding-left: 1.2rem;">`;
+                    ix.nearest_refs.forEach(ref => {
+                        refsHtml += `<li>${ref}</li>`;
+                    });
+                    refsHtml += `</ul></div>`;
+                }
+
+                let termsHtml = '';
+                if (ix.supporting_terms && ix.supporting_terms.length > 0) {
+                    const termBadges = ix.supporting_terms.map(t => `<span style="display: inline-block; background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; color: #e2e8f0; margin-right: 6px; margin-bottom: 4px;">${t}</span>`).join('');
+                    termsHtml = `<div style="margin-top: 0.8rem;"><div style="color: #cbd5e1; font-size: 0.8rem; margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.5px;"><i class="fa-solid fa-tag"></i> Critical Keywords Detected</div>${termBadges}</div>`;
+                }
+                
+                html += `
+                <div class="list-card fade-in" style="animation-delay: ${0.5 + (i * 0.05)}s; border-left: 2px solid #8b5cf6;">
+                    <div class="list-header" style="margin-bottom: 0.5rem;">
+                        <div class="list-title" style="font-size: 1rem; color: #e2e8f0;">${ix.drugs}</div>
+                    </div>
+                    <div style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 0.5rem;">Predicted Severity: <strong style="color: #c4b5fd;">${ix.severity}</strong></div>
+                    <div style="color: #cbd5e1; font-size: 0.85rem; margin-bottom: 1rem; line-height: 1.4;">${ix.explanation || ''}</div>
+                    
+                    ${termsHtml}
+                    ${refsHtml}
+                </div>
+                `;
+            });
+            
+            if (xai.step5_waterfalls && xai.step5_waterfalls.length > 0) {
+                html += `<h3 style="font-size: 1.1rem; color: #f8fafc; margin-top: 1.5rem; margin-bottom: 1rem;"><i class="fa-solid fa-chart-waterfall"></i> Patient Context Impact</h3>`;
+                xai.step5_waterfalls.forEach((wf, i) => {
+                    html += `
+                    <div class="list-card fade-in" style="animation-delay: ${0.6 + (i * 0.05)}s; border-left: 2px solid #3b82f6;">
+                        <div class="list-header">
+                            <div class="list-title" style="color: #60a5fa">${wf.organ} Risk Score</div>
+                            <div class="badge" style="background: rgba(59, 130, 246, 0.2); color: #93c5fd;">Base: ${wf.base_score} &rarr; Adjusted: ${wf.final_score}</div>
+                        </div>
+                        <div style="color: #94a3b8; font-size: 0.85rem; margin-top: 0.5rem;">${wf.text}</div>
+                    </div>
+                    `;
+                });
+            }
+        }
+
         resultsContainer.innerHTML = html;
         resultsContainer.classList.remove('hidden');
     }

@@ -244,7 +244,8 @@ class DataLoader:
                 )
                 matches = self._interactions[mask]
 
-            for _, row in matches.iterrows():
+            if not matches.empty:
+                row = matches.iloc[0]
                 found.append(
                     {
                         "drug_a":      drug_a.title(),
