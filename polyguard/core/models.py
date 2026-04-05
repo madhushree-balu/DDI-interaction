@@ -15,9 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field, field_validator
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # REQUEST MODELS
-# ─────────────────────────────────────────────────────────────────────────────
 
 class PatientData(BaseModel):
     """Optional patient context passed to the full analysis pipeline."""
@@ -91,9 +89,7 @@ class BrandSearchRequest(BaseModel):
     limit: int = Field(10, ge=1, le=50, description="Maximum results to return")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # RESPONSE MODELS
-# ─────────────────────────────────────────────────────────────────────────────
 
 class BrandSearchResult(BaseModel):
     """Response from brand name prefix search."""

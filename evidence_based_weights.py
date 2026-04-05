@@ -4,9 +4,8 @@ All weights derived from peer-reviewed literature.
 Each value includes citation, rationale, and validation data.
 """
 
-from typing import Tuple
-from dataclasses import dataclass, field
-
+from dataclasses import dataclass
+from typing import Optional, Tuple
 
 @dataclass
 class EvidenceSource:
@@ -15,9 +14,9 @@ class EvidenceSource:
     citation: str
     rationale: str
     evidence_level: str  # High / Moderate / Low
-    dataset_size: int = None
-    confidence_interval: Tuple[float, float] = None
-    validation_method: str = None
+    dataset_size: Optional[int] = None
+    confidence_interval: Optional[Tuple[float, float]] = None
+    validation_method: Optional[str] = None
 
 
 # ─────────────────────────────────────────────
@@ -219,7 +218,7 @@ LAB_VALUE_THRESHOLDS = {
         (  0,  70): EvidenceSource(1.62, 'ADA Hypoglycaemia Guidelines 2023', 'Hypoglycaemia; 62% increased severe hypo risk with polypharmacy', 'High'),
     },
     'INR': {
-        (4.0, 20.0): EvidenceSource(2.25, 'Ansell J. Chest. 2008;133(6):160S.', 'INR >4: major bleed risk >10%/yr', 'High'),
+        (4.0, 9999): EvidenceSource(2.25, 'Ansell J. Chest. 2008;133(6):160S.', 'INR >4: major bleed risk >10%/yr', 'High'),
         (3.0,  4.0): EvidenceSource(1.55, 'Ansell 2008', 'Above therapeutic range',                                  'High'),
     },
 }

@@ -1,4 +1,4 @@
-# nlp_engine.py
+
 """
 PolyGuard NLP Engine
 =====================
@@ -36,15 +36,15 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.pipeline import Pipeline
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TRAINING CORPUS
-# Each entry: (text, severity_score 0-100, [organ_labels])
-# Sentences are realistic DrugBank/MedDRA-style interaction descriptions.
-# ─────────────────────────────────────────────────────────────────────────────
+
+
+
+
+
 
 TRAINING_CORPUS: List[Tuple[str, int, List[str]]] = [
 
-    # ── CRITICAL / FATAL ──────────────────────────────────────────────────────
+    # ── CRITICAL (score 50) ──────────────────────────────────────────────────
     ("Combination is fatal and results in death due to cardiac arrest.", 50, ["CARDIOVASCULAR"]),
     ("Life-threatening respiratory failure requiring immediate ICU intervention.", 50, ["RESPIRATORY"]),
     ("Fatal serotonin syndrome reported with this combination in multiple case reports.", 50, ["CENTRAL_NERVOUS_SYSTEM"]),
@@ -56,8 +56,9 @@ TRAINING_CORPUS: List[Tuple[str, int, List[str]]] = [
     ("Fatal rhabdomyolysis with myoglobinuria and acute renal failure.", 50, ["MUSCULOSKELETAL", "RENAL"]),
     ("Lethal hypoglycaemia leading to coma and death in diabetic patients.", 50, ["ENDOCRINE"]),
 
-    # ── SEVERE ────────────────────────────────────────────────────────────────
-    # Cardiovascular
+    # ── SEVERE (score 35-45) ─────────────────────────────────────────────────
+
+    # CARDIOVASCULAR
     ("The risk or severity of bleeding and haemorrhage is markedly increased.", 38, ["CARDIOVASCULAR", "HEMATOLOGIC"]),
     ("Severe cardiac arrhythmia including ventricular fibrillation reported.", 35, ["CARDIOVASCULAR"]),
     ("QT interval prolongation and torsades de pointes risk significantly elevated.", 35, ["CARDIOVASCULAR"]),
@@ -66,7 +67,7 @@ TRAINING_CORPUS: List[Tuple[str, int, List[str]]] = [
     ("Anticoagulant activities are significantly increased causing dangerous bleeding.", 38, ["HEMATOLOGIC", "CARDIOVASCULAR"]),
     ("Risk of myocardial infarction and coronary thrombosis substantially increased.", 35, ["CARDIOVASCULAR"]),
 
-    # Hepatic
+    # HEPATIC
     ("Severe hepatotoxicity and drug-induced liver injury (DILI) reported.", 35, ["HEPATIC"]),
     ("Acute liver failure with markedly elevated ALT and AST enzymes.", 38, ["HEPATIC"]),
     ("Hepatocellular damage and cholestatic jaundice with bilirubin elevation.", 35, ["HEPATIC"]),
@@ -74,55 +75,59 @@ TRAINING_CORPUS: List[Tuple[str, int, List[str]]] = [
     ("Fulminant hepatic failure requiring liver transplant evaluation.", 45, ["HEPATIC"]),
     ("Rifampicin-induced hepatic enzyme induction dramatically alters metabolism.", 35, ["HEPATIC"]),
 
-    # Renal
+    # RENAL
     ("Nephrotoxicity and acute kidney injury (AKI) significantly increased.", 35, ["RENAL"]),
     ("Severe renal failure with creatinine elevation and eGFR reduction.", 38, ["RENAL"]),
     ("Aminoglycoside nephrotoxicity potentiated, requiring creatinine monitoring.", 35, ["RENAL"]),
     ("Risk of tubulointerstitial nephritis and renal tubular acidosis.", 35, ["RENAL"]),
     ("Acute tubular necrosis and oliguric renal failure in high-risk patients.", 38, ["RENAL"]),
 
-    # Hematologic
+    # HEMATOLOGIC
     ("Major bleeding with platelet dysfunction and coagulation impairment.", 38, ["HEMATOLOGIC"]),
     ("Severe thrombocytopenia and risk of spontaneous haemorrhage.", 35, ["HEMATOLOGIC"]),
     ("INR substantially elevated increasing major bleeding risk.", 38, ["HEMATOLOGIC"]),
     ("Antiplatelet effects combined with anticoagulation cause serious haemorrhage.", 38, ["HEMATOLOGIC", "CARDIOVASCULAR"]),
     ("Disseminated intravascular coagulation (DIC) risk substantially increased.", 45, ["HEMATOLOGIC"]),
 
-    # CNS
+    # CENTRAL NERVOUS SYSTEM
     ("Severe serotonin syndrome with hyperthermia, clonus, and agitation.", 38, ["CENTRAL_NERVOUS_SYSTEM"]),
     ("CNS depression causing profound sedation, confusion, and loss of consciousness.", 35, ["CENTRAL_NERVOUS_SYSTEM"]),
     ("Seizure threshold significantly lowered, risk of generalised tonic-clonic seizures.", 35, ["CENTRAL_NERVOUS_SYSTEM"]),
     ("Neuroleptic malignant syndrome with hyperthermia and muscle rigidity.", 38, ["CENTRAL_NERVOUS_SYSTEM"]),
     ("Severe encephalopathy with cognitive impairment and disorientation.", 35, ["CENTRAL_NERVOUS_SYSTEM"]),
 
-    # Respiratory
+    # RESPIRATORY
     ("Severe respiratory depression and apnea requiring ventilatory support.", 38, ["RESPIRATORY"]),
     ("Pulmonary oedema and severe dyspnea with hypoxia.", 35, ["RESPIRATORY"]),
     ("Bronchospasm and severe asthma exacerbation with this combination.", 35, ["RESPIRATORY"]),
     ("Respiratory muscle paralysis causing ventilatory failure.", 45, ["RESPIRATORY"]),
 
-    # Endocrine
+    # ENDOCRINE
     ("Severe hypoglycaemia including loss of consciousness and seizures.", 35, ["ENDOCRINE"]),
     ("Profound hyperglycaemia and diabetic ketoacidosis (DKA) risk increased.", 35, ["ENDOCRINE"]),
     ("Thyroid storm precipitated by drug interaction in hyperthyroid patients.", 38, ["ENDOCRINE"]),
     ("Adrenal insufficiency crisis triggered by abrupt steroid withdrawal interaction.", 38, ["ENDOCRINE"]),
 
-    # Musculoskeletal
+    # MUSCULOSKELETAL
     ("Rhabdomyolysis with severe myopathy and markedly elevated creatine kinase (CK).", 38, ["MUSCULOSKELETAL"]),
     ("Statin-fibrate interaction causes severe myositis and muscle necrosis.", 35, ["MUSCULOSKELETAL"]),
+    ("Severe muscle breakdown with myoglobin release and brown urine.", 38, ["MUSCULOSKELETAL"]),
+    ("Acute compartment syndrome following severe drug-induced rhabdomyolysis.", 35, ["MUSCULOSKELETAL"]),
 
-    # Immune
+    # IMMUNE SYSTEM
     ("Stevens-Johnson syndrome and toxic epidermal necrolysis risk increased.", 38, ["IMMUNE_SYSTEM"]),
     ("Severe anaphylaxis with urticaria and bronchospasm.", 38, ["IMMUNE_SYSTEM", "RESPIRATORY"]),
     ("Severe immunosuppression with opportunistic infections.", 35, ["IMMUNE_SYSTEM"]),
     ("Drug reaction with eosinophilia and systemic symptoms (DRESS) reported.", 35, ["IMMUNE_SYSTEM"]),
 
-    # GI
+    # GASTROINTESTINAL
     ("Severe gastrointestinal bleeding and gastric ulcer perforation risk.", 35, ["GASTROINTESTINAL"]),
     ("Serious GI haemorrhage when NSAID combined with anticoagulant.", 38, ["GASTROINTESTINAL", "HEMATOLOGIC"]),
+    ("Acute pancreatitis risk substantially increased with combination therapy.", 35, ["GASTROINTESTINAL"]),
+    ("Severe colitis and intestinal perforation risk with this drug pair.", 38, ["GASTROINTESTINAL"]),
 
-    # ── MODERATE ──────────────────────────────────────────────────────────────
-    ("Increased risk of cardiac adverse events. Close monitoring recommended.", 20, ["CARDIOVASCULAR"]),
+    # ── MODERATE (score 20-29) ── one representative per organ ───────────────
+    ("Increased risk of cardiac adverse events. Close ECG monitoring recommended.", 20, ["CARDIOVASCULAR"]),
     ("Elevated ALT enzyme levels indicating moderate hepatic stress.", 20, ["HEPATIC"]),
     ("Moderate increase in serum creatinine. Renal function monitoring advised.", 20, ["RENAL"]),
     ("Elevated INR requiring dose adjustment. Regular coagulation checks needed.", 20, ["HEMATOLOGIC"]),
@@ -132,48 +137,54 @@ TRAINING_CORPUS: List[Tuple[str, int, List[str]]] = [
     ("Mild to moderate myalgia and muscle aches with elevated CK.", 20, ["MUSCULOSKELETAL"]),
     ("Moderate GI adverse effects including nausea, vomiting, and stomach discomfort.", 20, ["GASTROINTESTINAL"]),
     ("Moderate hypersensitivity reaction with skin rash and mild urticaria.", 20, ["IMMUNE_SYSTEM"]),
-    ("Concurrent use increases risk of adverse effects. Medical supervision needed.", 20, ["CARDIOVASCULAR"]),
-    ("Reduced antibiotic efficacy when taken together. Treatment failure risk.", 18, ["IMMUNE_SYSTEM"]),
-    ("Drug levels may be increased or decreased. Therapeutic monitoring required.", 20, ["HEPATIC"]),
     ("Hypertension may be worsened. Blood pressure monitoring recommended.", 20, ["CARDIOVASCULAR"]),
-    ("Moderate hypoglycaemic effect enhanced. Glucose monitoring essential.", 20, ["ENDOCRINE"]),
-    ("Platelet aggregation moderately impaired. Caution with surgical procedures.", 20, ["HEMATOLOGIC"]),
-    ("Renal clearance moderately reduced. Dose adjustment may be necessary.", 20, ["RENAL"]),
-    ("Liver enzyme induction moderately accelerates metabolism.", 20, ["HEPATIC"]),
+    ("Reduced antibiotic efficacy when taken together. Treatment failure risk.", 18, ["IMMUNE_SYSTEM"]),
+    ("Drug levels may be increased or decreased. Therapeutic drug monitoring required.", 20, ["HEPATIC"]),
     ("Moderate QT prolongation observed. ECG monitoring recommended.", 20, ["CARDIOVASCULAR"]),
     ("Decreased efficacy of antihypertensive therapy observed.", 18, ["CARDIOVASCULAR"]),
     ("Plasma concentration elevated due to CYP450 inhibition. Monitor closely.", 20, ["HEPATIC"]),
+    ("Concurrent use increases renal clearance, dose adjustment may be needed.", 20, ["RENAL"]),
+    ("Platelet aggregation moderately impaired. Caution with surgical procedures.", 20, ["HEMATOLOGIC"]),
+    ("Moderate hypoglycaemic effect enhanced with insulin sensitisers.", 20, ["ENDOCRINE"]),
+    ("Moderate bronchodilator interaction. Pulse-oximetry monitoring advised.", 20, ["RESPIRATORY"]),
 
-    # ── MILD ──────────────────────────────────────────────────────────────────
-    ("May slightly increase the risk of adverse effects. Monitor patients routinely.", 10, ["CARDIOVASCULAR"]),
-    ("Minor pharmacokinetic interaction. Clinical significance is low.", 5, ["HEPATIC"]),
-    ("Caution advised when combining. Routine monitoring sufficient.", 10, ["RENAL"]),
-    ("Small increase in drug exposure. Generally well tolerated.", 8, ["HEPATIC"]),
-    ("Mild nausea may occur when taken together. Administer with food.", 10, ["GASTROINTESTINAL"]),
-    ("Slight reduction in drug absorption possible. Separate administration by 2 hours.", 8, ["GASTROINTESTINAL"]),
+    # ── MILD / MINIMAL (score 5-19) ── distributed across all organs ─────────
+    ("May slightly increase the risk of adverse cardiac effects. Routine monitoring.", 10, ["CARDIOVASCULAR"]),
+    ("Minor hepatic pharmacokinetic interaction. Clinical significance is low.", 5, ["HEPATIC"]),
+    ("Caution advised when combining. Renal function routine monitoring sufficient.", 10, ["RENAL"]),
+    ("Small increase in drug exposure. Generally well tolerated. Hematologic monitoring.", 8, ["HEMATOLOGIC"]),
+    ("Mild nausea and GI discomfort may occur when taken together. Administer with food.", 10, ["GASTROINTESTINAL"]),
+    ("Slight reduction in drug absorption possible. Separate by 2 hours.", 8, ["GASTROINTESTINAL"]),
     ("Minor CNS effects such as mild headache or dizziness possible.", 10, ["CENTRAL_NERVOUS_SYSTEM"]),
-    ("Low risk interaction. Patient counselling regarding symptom monitoring advised.", 8, ["CARDIOVASCULAR"]),
-    ("Mild drowsiness may be enhanced. Avoid driving if affected.", 10, ["CENTRAL_NERVOUS_SYSTEM"]),
-    ("Generally safe combination. Routine follow-up recommended.", 5, ["CARDIOVASCULAR"]),
-    ("No significant interaction expected at standard doses.", 5, ["CARDIOVASCULAR"]),
-    ("Minor interaction with limited clinical impact.", 5, ["HEPATIC"]),
-    ("Interaction unlikely to cause clinically significant effects.", 5, ["CARDIOVASCULAR"]),
-    ("Monitor for minor changes in drug levels. No dose adjustment needed.", 8, ["HEPATIC"]),
-    ("Mild increase in bronchodilator effects. No clinical action needed.", 8, ["RESPIRATORY"]),
+    ("Low respiratory interaction risk. Patient counselling regarding symptom monitoring.", 8, ["RESPIRATORY"]),
+    ("Mild drowsiness may be enhanced by CNS combination. Avoid driving if affected.", 10, ["CENTRAL_NERVOUS_SYSTEM"]),
+    ("Generally safe combination. Routine endocrine follow-up recommended.", 5, ["ENDOCRINE"]),
+    ("No significant musculoskeletal interaction expected at standard doses.", 5, ["MUSCULOSKELETAL"]),
+    ("Minor immune interaction with limited clinical impact.", 5, ["IMMUNE_SYSTEM"]),
+    ("Interaction unlikely to cause clinically significant immune effects.", 5, ["IMMUNE_SYSTEM"]),
+    ("Monitor for minor changes in hepatic drug levels. No dose adjustment needed.", 8, ["HEPATIC"]),
+    ("Mild increase in bronchodilator effects. No clinical pulmonary action needed.", 8, ["RESPIRATORY"]),
     ("Minor effect on blood glucose unlikely to require intervention.", 8, ["ENDOCRINE"]),
+    ("Mild muscle aches reported rarely. No dose change required.", 8, ["MUSCULOSKELETAL"]),
+    ("Minor GI discomfort when taken on an empty stomach.", 5, ["GASTROINTESTINAL"]),
 
-    # ── NEGATION — these should score low ────────────────────────────────────
-    ("No significant drug interaction has been documented between these agents.", 5, ["CARDIOVASCULAR"]),
-    ("No increased risk of adverse effects observed in clinical trials.", 5, ["CARDIOVASCULAR"]),
-    ("No clinically relevant interaction is expected under normal circumstances.", 5, ["HEPATIC"]),
-    ("The interaction is unlikely to be clinically significant. No action required.", 5, ["CARDIOVASCULAR"]),
+    # ── NEGATED / NO-INTERACTION ── distributed across all organs ────────────
+    ("No significant cardiovascular drug interaction has been documented.", 5, ["CARDIOVASCULAR"]),
+    ("No increased cardiac risk observed in clinical trials.", 5, ["CARDIOVASCULAR"]),
+    ("No clinically relevant hepatic interaction expected under normal circumstances.", 5, ["HEPATIC"]),
     ("No evidence of hepatotoxicity was found in controlled studies.", 5, ["HEPATIC"]),
     ("No renal toxicity reported. eGFR unaffected in pharmacokinetic studies.", 5, ["RENAL"]),
-    ("Clinical significance of this interaction is negligible.", 5, ["CARDIOVASCULAR"]),
-    ("Interaction is minimal and does not warrant dose modification.", 5, ["CARDIOVASCULAR"]),
+    ("No clinically significant renal interaction expected.", 5, ["RENAL"]),
+    ("No significant haematologic interaction. INR unaffected in pharmacokinetic studies.", 5, ["HEMATOLOGIC"]),
+    ("No CNS interaction documented. No dose adjustment required.", 5, ["CENTRAL_NERVOUS_SYSTEM"]),
+    ("No respiratory adverse effects expected from this combination.", 5, ["RESPIRATORY"]),
+    ("No significant endocrine interaction. Blood glucose unaffected.", 5, ["ENDOCRINE"]),
+    ("No musculoskeletal interaction. CK levels unaffected in studies.", 5, ["MUSCULOSKELETAL"]),
+    ("No immune hypersensitivity interaction documented.", 5, ["IMMUNE_SYSTEM"]),
+    ("No GI interaction. Bioavailability unaffected when co-administered.", 5, ["GASTROINTESTINAL"]),
 ]
 
-# Organ label set (canonical order)
+
 ALL_ORGANS = [
     'CARDIOVASCULAR', 'HEPATIC', 'RENAL', 'HEMATOLOGIC',
     'GASTROINTESTINAL', 'CENTRAL_NERVOUS_SYSTEM', 'RESPIRATORY',
@@ -181,11 +192,11 @@ ALL_ORGANS = [
 ]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. NLP PREPROCESSOR
-# ─────────────────────────────────────────────────────────────────────────────
 
-# Medical stopwords — common but uninformative in this domain
+
+
+
+
 _MEDICAL_STOPWORDS = {
     'the','a','an','of','in','is','are','was','be','to','and','or','this',
     'that','with','for','on','at','by','from','as','may','can','could',
@@ -195,13 +206,13 @@ _MEDICAL_STOPWORDS = {
     'between','during','after','while','however','therefore','thus','hence',
 }
 
-# Negation cues — words that introduce a negation scope
+
 _NEGATION_CUES = {
     'no','not','never','neither','without','unlikely','rarely','minimal',
     'negligible','absence','absent','lack','lacking','none','non',
 }
 
-# Simple suffix-based lemmatiser (avoids NLTK dependency)
+
 _LEMMA_RULES = [
     (r'ations?$', 'ation'), (r'ities$', 'ity'), (r'nesses$', 'ness'),
     (r'ings?$', 'ing'),     (r'ments?$', 'ment'), (r'ical$', 'ic'),
@@ -213,8 +224,15 @@ _LEMMA_RULES = [
     (r'arrhythm\w+', 'arrhythmia'),
     (r'rhabdomyolys\w+', 'rhabdomyolysis'),
     (r'thrombocytopen\w+', 'thrombocytopenia'),
-    (r'cardio\w+', 'cardiovascular'),
+    # Narrowed: previously 'cardio\w+' → 'cardiovascular' collapsed ALL cardiac
+    # vocabulary (cardiac, cardiomyopathy, cardiotoxic, etc.) into one token,
+    # artificially inflating CARDIOVASCULAR classifier confidence for any text
+    # mentioning heart-related terms even when labelled as another organ.
+    (r'cardiovascular', 'cardiovascular'),
+    (r'cardiomyopath\w+', 'cardiomyopathy'),
+    (r'cardiac', 'cardiac'),
 ]
+
 
 
 def preprocess(text: str) -> Tuple[str, bool, List[str]]:
@@ -226,17 +244,17 @@ def preprocess(text: str) -> Tuple[str, bool, List[str]]:
         is_negated     : True if negation cue found in sentence
         tokens         : raw token list (for debugging)
     """
-    # Lower-case, remove punctuation except hyphens in compounds
+    
     text_clean = text.lower()
     text_clean = re.sub(r'[^\w\s\-]', ' ', text_clean)
     text_clean = re.sub(r'\s+', ' ', text_clean).strip()
 
     tokens = text_clean.split()
 
-    # Detect negation — flag entire sentence if cue found
+    
     is_negated = any(t in _NEGATION_CUES for t in tokens)
 
-    # Apply lemmatisation rules
+    
     processed = []
     for tok in tokens:
         if tok in _MEDICAL_STOPWORDS:
@@ -251,10 +269,10 @@ def preprocess(text: str) -> Tuple[str, bool, List[str]]:
     return ' '.join(processed), is_negated, tokens
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. SEVERITY SCORER
-# TF-IDF features → Logistic Regression predicting severity bucket (0-50)
-# ─────────────────────────────────────────────────────────────────────────────
+
+
+
+
 
 class SeverityScorer:
     """
@@ -264,7 +282,7 @@ class SeverityScorer:
     Training data: TRAINING_CORPUS (embedded, no file I/O needed).
     """
 
-    # Score → bucket label mapping
+    
     _BUCKETS = {
         'MINIMAL':  (0,  9),
         'MILD':     (10, 19),
@@ -281,7 +299,7 @@ class SeverityScorer:
     def train(self, corpus: List[Tuple[str, int, List[str]]]) -> 'SeverityScorer':
         """Train from list of (text, score, organs) tuples."""
         texts  = [preprocess(t)[0] for t, _, _ in corpus]
-        # Discretise scores into 5 buckets for classification
+        
         labels = [self._score_to_bucket(s) for _, s, _ in corpus]
 
         self._pipeline = Pipeline([
@@ -327,17 +345,17 @@ class SeverityScorer:
         if bucket not in self._BUCKETS:
             raise RuntimeError(f"Unexpected bucket: {bucket}")
         
-        # Map bucket → midpoint score
+        
         lo, hi = self._BUCKETS[bucket]
         raw_score = int((lo + hi) / 2)
 
-        # Weight by confidence: higher probability → closer to bucket max
+        
         bucket_idx = list(self._classes).index(bucket)
         confidence = float(proba[bucket_idx])
         score = int(lo + (hi - lo) * confidence)
         score = max(lo, min(hi, score))
 
-        # Negation discount: reduce to 30% of score
+        
         if is_negated:
             score = max(5, int(score * 0.30))
             bucket = self._score_to_bucket(score)
@@ -353,10 +371,10 @@ class SeverityScorer:
         return 'MINIMAL'
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. ORGAN CLASSIFIER
-# TF-IDF features → Multi-label One-vs-Rest classifier for organ systems
-# ─────────────────────────────────────────────────────────────────────────────
+
+
+
+
 
 class OrganClassifier:
     """
@@ -422,7 +440,7 @@ class OrganClassifier:
         processed, _, _ = preprocess(text)
         X = self._vectoriser.transform([processed])
 
-        # Per-class probabilities from each OvR estimator
+        
         proba_matrix = np.array([
             est.predict_proba(X)[0][1]
             for est in self._clf.estimators_
@@ -433,7 +451,7 @@ class OrganClassifier:
             if prob >= threshold:
                 results.append((organ, float(prob)))
 
-        # Always return at least the highest-confidence organ
+        
         if not results:
             best_idx = int(np.argmax(proba_matrix))
             results  = [(ALL_ORGANS[best_idx], float(proba_matrix[best_idx]))]
@@ -451,9 +469,9 @@ class OrganClassifier:
         return dict(zip(ALL_ORGANS, proba_matrix.tolist()))
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. SEMANTIC SIMILARITY (TF-IDF cosine)
-# ─────────────────────────────────────────────────────────────────────────────
+
+
+
 
 class SemanticSimilarity:
     """
@@ -506,9 +524,9 @@ class SemanticSimilarity:
         ]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 5. MODEL REGISTRY — singleton trained models
-# ─────────────────────────────────────────────────────────────────────────────
+
+
+
 
 class _ModelRegistry:
     """Lazy-initialised singleton holding all trained NLP models."""
@@ -555,9 +573,9 @@ def get_models() -> _ModelRegistry:
     return _ModelRegistry.get()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 6. TOP-LEVEL ANALYSER (replaces Steps 3 & 4 in the engine)
-# ─────────────────────────────────────────────────────────────────────────────
+
+
+
 
 def analyse_interaction_text(description: str) -> Dict:
     """
@@ -584,7 +602,7 @@ def analyse_interaction_text(description: str) -> Dict:
         'score':           score,
         'severity':        severity,
         'is_negated':      is_negated,
-        'organs':          organs,          # [(organ, confidence), ...]
+        'organs':          organs,          
         'nearest_refs':    nearest,
         'processed_text':  processed,
         'tokens':          tokens,
@@ -606,9 +624,9 @@ def analyse_interaction_batch(interactions: List[Dict]) -> List[Dict]:
     return enriched
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# QUICK SELF-TEST  (run: python nlp_engine.py)
-# ─────────────────────────────────────────────────────────────────────────────
+
+
+
 
 if __name__ == '__main__':
     print("=" * 70)
@@ -658,7 +676,7 @@ if __name__ == '__main__':
     print(f"\n  Severity accuracy : {correct_sev}/{n} ({100*correct_sev//n}%)")
     print(f"  Organ accuracy    : {correct_organ}/{n} ({100*correct_organ//n}%)")
 
-    # Negation test
+    
     print("\n  Negation test:")
     pos = analyse_interaction_text("Severe bleeding and haemorrhage risk increased.")
     neg = analyse_interaction_text("No significant bleeding risk. Unlikely to cause haemorrhage.")

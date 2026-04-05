@@ -192,7 +192,10 @@ def analyze_biological_impact(interactions_list: List[Dict], base_scores: Dict) 
             'evidence_level':     ev.evidence_level if ev else 'N/A',
         })
 
-    systems.sort(key=lambda x: x['score'], reverse=True)
+    # Sort by NLP confidence first (unbiased model signal) then by score as tiebreaker.
+    # Previously sorted by score alone, which always promoted CARDIOVASCULAR because its
+    # organ severity weight (1.52) is the highest in the table, regardless of NLP confidence.
+    systems.sort(key=lambda x: (x['nlp_confidence'], x['score']), reverse=True)
 
     return {
         'affected_organ_systems': systems,
@@ -337,7 +340,9 @@ def adjust_for_patient_context(organ_systems: List[Dict], patient_data: Dict) ->
         })
         adjusted.append(entry)
 
-    adjusted.sort(key=lambda x: x['adjusted_score'], reverse=True)
+    # Same fix as Step 4: use nlp_confidence as primary sort key so that
+    # weight-inflated adjusted scores don't always push CARDIOVASCULAR to the top.
+    adjusted.sort(key=lambda x: (x['nlp_confidence'], x['adjusted_score']), reverse=True)
 
     return {
         'status':           'ADJUSTED',

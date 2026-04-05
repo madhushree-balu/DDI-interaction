@@ -8,7 +8,7 @@ pandas / CSV paths directly.
 Usage::
 
     loader = DataLoader(data_dir="./datasets")
-    loader.load()                       # call once at startup
+    loader.load()                       
 
     brands   = loader.search_brands("Aug", limit=5)
     ings     = loader.get_ingredients("Augmentin 625 Duo Tablet")
@@ -32,11 +32,6 @@ logger = logging.getLogger(__name__)
 class DataLoader:
     """
     Loads and normalises all PolyGuard datasets from a given directory.
-
-    Parameters
-    ----------
-    data_dir : str | Path
-        Directory that contains the CSV files.  Defaults to ``./datasets``.
     """
 
     _PHARMA_FILE      = "indian_pharmaceutical_products_clean.csv"
@@ -53,7 +48,7 @@ class DataLoader:
         self._ingredient_id_map: Dict[str, str] = {}
         self._loaded: bool = False
 
-    # ── Public API ────────────────────────────────────────────────────────────
+    
 
     def load(self) -> "DataLoader":
         """Load all datasets.  Safe to call multiple times (idempotent)."""
@@ -91,20 +86,20 @@ class DataLoader:
             
         q = prefix.lower().strip()
         
-        # 1. Startswith match
+        
         mask_starts = self._pharma_db["brand_name"].str.lower().str.startswith(q, na=False)
         starts_results = self._pharma_db[mask_starts]["brand_name"].drop_duplicates().tolist()
         
-        # 2. Contains match
+        
         mask_contains = self._pharma_db["brand_name"].str.lower().str.contains(q, na=False, regex=False)
         contains_results = self._pharma_db[mask_contains & ~mask_starts]["brand_name"].drop_duplicates().tolist()
         
-        # 3. Ingredient match
+        
         ing_mask = self._pharma_db["primary_ingredient"].str.lower().str.contains(q, na=False, regex=False)
         ing_results = self._pharma_db[ing_mask]["primary_ingredient"].dropna().drop_duplicates().tolist()
         
-        # Combine
-        # Return starts_results first, then contains_results, then ingredients
+        
+        
         results = starts_results + contains_results + ing_results
         
         seen = set()
@@ -117,7 +112,7 @@ class DataLoader:
                 if len(final_results) >= limit:
                     break
         
-        # 4. Fallback for OCR cases: "Some Name Aspirine" -> Match "Aspirine"
+        
         if not final_results and len(q.split()) > 1:
             words = [w for w in q.split() if len(w) > 3]
             fallback_results = []
@@ -148,7 +143,7 @@ class DataLoader:
             self._pharma_db["brand_name"].str.lower() == brand_name.lower()
         ]
 
-        # Fuzzy fallback: contains match
+        
         if rows.empty:
             rows = self._pharma_db[
                 self._pharma_db["brand_name"].str.lower().str.contains(
@@ -158,12 +153,12 @@ class DataLoader:
 
         if rows.empty:
             search_name = brand_name.lower().strip()
-            # Check if it is an ingredient
+            
             mask_ing = self._pharma_db["primary_ingredient"].str.lower() == search_name
             if mask_ing.any():
                 return [brand_name.title()]
                 
-            # Check in interactions directly
+            
             if not self._interactions.empty:
                 in_drug1 = (self._interactions["drug1_name"] == search_name).any()
                 in_drug2 = (self._interactions["drug2_name"] == search_name).any()
@@ -182,7 +177,7 @@ class DataLoader:
         if "active_ingredients" in rows.columns:
             for raw in rows["active_ingredients"].dropna():
                 try:
-                    parsed = eval(raw) if isinstance(raw, str) else raw  # noqa: S307
+                    parsed = eval(raw) if isinstance(raw, str) else raw  
                     if isinstance(parsed, list):
                         for item in parsed:
                             if isinstance(item, dict) and "name" in item:
@@ -259,7 +254,7 @@ class DataLoader:
 
         return found
 
-    # ── Private helpers ───────────────────────────────────────────────────────
+    
 
     def _assert_loaded(self) -> None:
         if not self._loaded:
