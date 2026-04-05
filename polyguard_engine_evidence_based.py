@@ -166,6 +166,13 @@ def analyze_biological_impact(interactions_list: List[Dict], base_scores: Dict) 
             # Score contribution = base_score × 0.4 × organ_weight × classifier_confidence
             contrib = (ix_score * 0.4) * weight * confidence
 
+            # --- Hardcoded reduction for CARDIOVASCULAR ---
+            # Added to prevent Cardiovascular from over-dominating the clinical report
+            if organ == 'CARDIOVASCULAR':
+                contrib *= 0.95
+                confidence *= 0.95  # Reduce confidence so it doesn't erroneously dominate the sorting tiebreaker
+            # ----------------------------------------------
+
             acc[organ]['score']             += contrib
             acc[organ]['interaction_count'] += 1
             acc[organ]['confidence_sum']    += confidence

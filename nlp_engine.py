@@ -447,14 +447,14 @@ class OrganClassifier:
         ])
 
         results = []
-        for organ, prob in zip(ALL_ORGANS, proba_matrix):
+        for organ, prob in zip(self._mlb.classes_, proba_matrix):
             if prob >= threshold:
                 results.append((organ, float(prob)))
 
         
         if not results:
             best_idx = int(np.argmax(proba_matrix))
-            results  = [(ALL_ORGANS[best_idx], float(proba_matrix[best_idx]))]
+            results  = [(self._mlb.classes_[best_idx], float(proba_matrix[best_idx]))]
 
         return sorted(results, key=lambda x: x[1], reverse=True)
 
@@ -466,7 +466,7 @@ class OrganClassifier:
             est.predict_proba(X)[0][1]
             for est in self._clf.estimators_
         ])
-        return dict(zip(ALL_ORGANS, proba_matrix.tolist()))
+        return dict(zip(self._mlb.classes_, proba_matrix.tolist()))
 
 
 
